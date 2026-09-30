@@ -1,0 +1,28 @@
+{
+  "name": "llm-proxy",
+  "version": "1.0.0",
+  "description": "Multi-provider LLM proxy with TOML config",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx --watch src/index.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hikari-van-horn/llm-proxy.git"
+  },
+  "author": "Hikari",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/hikari-van-horn/llm-proxy/issues"
+  },
+  "homepage": "https://github.com/hikari-van-horn/llm-proxy#readme",
+  "dependencies": {
+    "smol-toml": "^1.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}

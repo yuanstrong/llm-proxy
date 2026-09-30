@@ -1,0 +1,33 @@
+listen = "127.0.0.1:9876"
+
+[providers.deepseek]
+api_key = "sk-xxx"
+
+[providers.deepseek.endpoints]
+anthropic = "https://api.deepseek.com/anthropic"
+openai-completions = "https://api.deepseek.com/v1/chat/completions"
+openai-responses = "https://api.deepseek.com/v1/responses"
+
+[providers.deepseek.models]
+"claude-opus-4-7" = "deepseek-v4-pro"
+"claude-sonnet-4-6" = "deepseek-v4-flash"
+"claude-haiku-4-5" = "deepseek-v4-haiku"
+
+[providers.anthropic]
+api_key = "sk-ant-xxx"
+
+[providers.anthropic.endpoints]
+anthropic = "https://api.anthropic.com/v1/messages"
+
+[providers.anthropic.models]
+"claude-opus-4-7" = "claude-opus-4-7-20250219"
+"claude-sonnet-4-6" = "claude-sonnet-4-6-20250508"
+
+[providers.ollama-local]
+
+[providers.ollama-local.endpoints]
+openai-completions = "http://localhost:11434/v1/chat/completions"
+
+[providers.ollama-local.models]
+"claude-sonnet-4-6" = "llama3:latest"
+"claude-haiku-4-5" = "qwen2.5:7b"
