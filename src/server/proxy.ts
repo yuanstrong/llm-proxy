@@ -1,6 +1,18 @@
 import { IncomingMessage, ServerResponse } from 'http';
 import * as http from 'http';
 import * as https from 'https';
+import type { ApiFormat } from '../types';
+import type { Logger } from './logger';
+
+function resolveTargetUrl(targetUrl: string, format: ApiFormat): URL {
+  const url = new URL(targetUrl);
+
+  if (format === 'anthropic' && !url.pathname.endsWith('/v1/messages')) {
+    url.pathname = `${url.pathname.replace(/\/+$/, '')}/v1/messages`;
+  }
+
+  return url;
+}
 
 export function proxyRequest(
   req: IncomingMessage,
@@ -8,6 +20,8 @@ export function proxyRequest(
   targetUrl: string,
   models: Record<string, string>,
   apiKey?: string,
+  format: ApiFormat = 'openai-completions',
+  logger?: Logger,
 ): void {
   const bodyChunks: Buffer[] = [];
 
@@ -23,7 +37,6 @@ export function proxyRequest(
       ...req.headers,
     };
 
-    // Parse and replace model name
     if (bodyBuffer.length > 0) {
       try {
         const json = JSON.parse(bodyBuffer.toString('utf-8'));
@@ -38,13 +51,17 @@ export function proxyRequest(
       }
     }
 
-    // Prepare target URL and headers
-    const url = new URL(targetUrl);
+    const url = resolveTargetUrl(targetUrl, format);
     const isHttps = url.protocol === 'https:';
     headers.host = url.host;
 
     if (apiKey) {
-      headers['authorization'] = `Bearer ${apiKey}`;
+      if (format === 'anthropic') {
+        headers['x-api-key'] = apiKey;
+        delete headers.authorization;
+      } else {
+        headers.authorization = `Bearer ${apiKey}`;
+      }
     }
 
     const options: http.RequestOptions = {
@@ -63,6 +80,7 @@ export function proxyRequest(
     });
 
     proxyReq.on('error', (err: NodeJS.ErrnoException) => {
+      logger?.error(`Upstream request failed: ${err.message}`);
       if (!res.headersSent) {
         res.writeHead(502, { 'Content-Type': 'text/plain' });
         res.end(`Bad Gateway: ${err.message}`);

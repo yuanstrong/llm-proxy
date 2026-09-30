@@ -1,7 +1,7 @@
-listen = "127.0.0.1:9876"
-
 [providers.deepseek]
-api_key = "sk-xxx"
+listen = "127.0.0.1:8964"
+api_key = "${DEEPSEEK_API_KEY}"
+log_level = "info"
 
 [providers.deepseek.endpoints]
 anthropic = "https://api.deepseek.com/anthropic"
@@ -10,10 +10,11 @@ openai-responses = "https://api.deepseek.com/v1/responses"
 
 [providers.deepseek.models]
 "claude-opus-4-7" = "deepseek-v4-pro"
-"claude-sonnet-4-6" = "deepseek-v4-flash"
-"claude-haiku-4-5" = "deepseek-v4-haiku"
+"claude-sonnet-4-6" = "deepseek-flash"
+"claude-haiku-4-5" = "deepseek-flash"
 
 [providers.anthropic]
+listen = "127.0.0.1:9877"
 api_key = "sk-ant-xxx"
 
 [providers.anthropic.endpoints]
@@ -24,6 +25,7 @@ anthropic = "https://api.anthropic.com/v1/messages"
 "claude-sonnet-4-6" = "claude-sonnet-4-6-20250508"
 
 [providers.ollama-local]
+listen = "127.0.0.1:9878"
 
 [providers.ollama-local.endpoints]
 openai-completions = "http://localhost:11434/v1/chat/completions"

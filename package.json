@@ -2,10 +2,15 @@
   "name": "llm-proxy",
   "version": "1.0.0",
   "description": "Multi-provider LLM proxy with TOML config",
-  "main": "src/index.ts",
+  "main": "dist/server/server/index.js",
   "scripts": {
-    "start": "tsx src/index.ts",
-    "dev": "tsx --watch src/index.ts"
+    "start": "pnpm run build:ui && tsx src/server/index.ts",
+    "dev": "pnpm run build:ui && tsx --watch src/server/index.ts",
+    "test": "node --import tsx --test test/**/*.test.ts",
+    "build:backend": "tsc -p tsconfig.server.json",
+    "build:ui": "tsc -p tsconfig.ui.json --noEmit && vite build",
+    "build": "pnpm run build:backend && pnpm run build:ui",
+    "start:built": "node dist/server/server/index.js"
   },
   "repository": {
     "type": "git",
@@ -23,6 +28,7 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "tsx": "^4.0.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vite": "^7.1.7"
   }
 }
