@@ -3,6 +3,8 @@ import * as path from 'node:path';
 import type { LogEntry, LogLevel, PromptHistoryEntry } from '../types';
 
 const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
+const FORMATTED_LOG_LINE = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}) \[PID:\d+\] \[TID:\d+\] \[([^\]]+)\] (.*)$/i;
+const PREFIXED_FORMATTED_LOG_LINE = /^\[([^\]]+)\]\s+(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}) \[PID:\d+\] \[TID:\d+\] \[([^\]]+)\] (.*)$/i;
 const TIMESTAMPED_LOG_LINE = /^\[([^\]]+)\]\s+\[([^\]]+)\]\s+\[([^\]]+)\]\s+(.*)$/;
 const LOG_LINE = /^\[([^\]]+)\]\s+\[([^\]]+)\]\s+(.*)$/;
 
@@ -32,13 +34,17 @@ export function readLogEntries(
     }
     for (const line of content.split(/\r?\n/)) {
       if (!line.trim()) continue;
+      const prefixedFormattedMatch = line.match(PREFIXED_FORMATTED_LOG_LINE);
+      const formattedMatch = line.match(FORMATTED_LOG_LINE);
       const timestampedMatch = line.match(TIMESTAMPED_LOG_LINE);
       const simpleMatch = line.match(LOG_LINE);
-      if (!timestampedMatch && !simpleMatch) continue;
-      const timestamp = timestampedMatch?.[1];
-      const providerFromLine = timestampedMatch?.[2] ?? simpleMatch?.[1];
-      const rawLevel = timestampedMatch?.[3] ?? simpleMatch?.[2];
-      const message = timestampedMatch?.[4] ?? simpleMatch?.[3] ?? '';
+      if (!prefixedFormattedMatch && !formattedMatch && !timestampedMatch && !simpleMatch) continue;
+      const timestamp = prefixedFormattedMatch?.[2] ?? formattedMatch?.[1] ?? timestampedMatch?.[1];
+      const providerFromLine = prefixedFormattedMatch?.[1] ?? timestampedMatch?.[2] ?? simpleMatch?.[1];
+      const rawLevel = (
+        prefixedFormattedMatch?.[3] ?? formattedMatch?.[2] ?? timestampedMatch?.[3] ?? simpleMatch?.[2] ?? ''
+      ).toLowerCase();
+      const message = prefixedFormattedMatch?.[4] ?? formattedMatch?.[3] ?? timestampedMatch?.[4] ?? simpleMatch?.[3] ?? '';
       if (!LOG_LEVELS.includes(rawLevel as LogLevel)) continue;
       const provider = providerFromLine || fileProvider;
       const level = rawLevel as LogLevel;

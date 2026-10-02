@@ -103,12 +103,12 @@ test('admin logs can be filtered by provider and level', async () => {
   await mkdir(path.join(runtimeHome, 'var', 'logs'), { recursive: true });
   await writeFile(
     path.join(runtimeHome, 'var', 'logs', 'deepseek.log'),
-    '[deepseek] [debug] request provider=deepseek method=POST url=/openai/v1/chat/completions\n' +
-      '[deepseek] [error] upstream failed\n',
+    '[deepseek] 2026-10-02 14:35:12.345 [PID:1234] [TID:0] [DEBUG] request provider=deepseek method=POST url=/openai/v1/chat/completions\n' +
+      '[deepseek] 2026-10-02 14:35:12.346 [PID:1234] [TID:0] [ERROR] upstream failed\n',
   );
   await writeFile(
     path.join(runtimeHome, 'var', 'logs', 'ollama.log'),
-    '[ollama] [info] listening\n',
+    '[ollama] 2026-10-02 14:35:12.347 [PID:5678] [TID:0] [INFO] listening\n',
   );
   const server = createManagementServer(config, fakeManager(), undefined, { LLM_PROXY_HOME: runtimeHome });
   server.listen(0, '127.0.0.1');
@@ -121,7 +121,12 @@ test('admin logs can be filtered by provider and level', async () => {
     );
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), [
-      { provider: 'deepseek', level: 'error', message: 'upstream failed' },
+      {
+        timestamp: '2026-10-02 14:35:12.346',
+        provider: 'deepseek',
+        level: 'error',
+        message: 'upstream failed',
+      },
     ]);
   } finally {
     await new Promise<void>((resolve, reject) =>

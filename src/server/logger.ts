@@ -1,18 +1,19 @@
 import { Writable } from 'node:stream';
+import { threadId } from 'node:worker_threads';
 import { createLogger as createWinstonLogger, format, transports, type Logger as WinstonLogger } from 'winston';
 import type { LogLevel } from '../types';
 
 export type LogWriter = (level: LogLevel, message: string) => void;
 export type Logger = WinstonLogger;
 
-const LOG_LINE = /^\[(debug|info|warn|error)\] (.*)$/;
+const LOG_LINE = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3} \[PID:\d+\] \[TID:\d+\] \[(debug|info|warn|error)\] (.*)$/i;
 
 function createWriterTransport(write: LogWriter): transports.StreamTransportInstance {
   const stream = new Writable({
     write(chunk, _encoding, callback) {
       const line = chunk.toString().trimEnd();
       const match = line.match(LOG_LINE);
-      if (match) write(match[1] as LogLevel, match[2]);
+      if (match) write(match[1].toLowerCase() as LogLevel, match[2]);
       callback();
     },
   });
@@ -22,7 +23,11 @@ function createWriterTransport(write: LogWriter): transports.StreamTransportInst
 export function createLogger(level: LogLevel = 'info', write?: LogWriter): Logger {
   return createWinstonLogger({
     level,
-    format: format.printf(({ level: messageLevel, message }) => `[${messageLevel}] ${String(message)}`),
+    format: format.combine(
+      format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss.SSS' }),
+      format.printf(({ level: messageLevel, message, timestamp }) =>
+        `${timestamp} [PID:${process.pid}] [TID:${threadId}] [${messageLevel.toUpperCase()}] ${String(message)}`),
+    ),
     transports: write
       ? [createWriterTransport(write)]
       : [new transports.Console({ stderrLevels: ['error'] })],
