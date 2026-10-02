@@ -37,9 +37,12 @@ function parseJson(body: string): Record<string, unknown> | undefined {
   }
 }
 
-export function extractRequestDetails(body: string): RequestDetails {
+export function extractRequestDetails(body: string): RequestDetails | undefined {
+  if (!body.trim()) return undefined;
+
   const parsed = parseJson(body);
   if (!parsed) return { prompt: body };
+  if (Object.keys(parsed).length === 0) return undefined;
 
   const model = typeof parsed.model === 'string' ? parsed.model : undefined;
   if (Array.isArray(parsed.messages)) {

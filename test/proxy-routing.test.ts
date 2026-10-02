@@ -287,3 +287,44 @@ test('captures OpenAI prompt and response in prompt history without changing the
     await rm(runtimeHome, { recursive: true, force: true });
   }
 });
+
+test('does not capture an empty JSON object as a prompt', async () => {
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'llm-proxy-empty-history-'));
+  const upstream = http.createServer((_req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true }));
+  });
+  upstream.listen(0, '127.0.0.1');
+  await once(upstream, 'listening');
+  const upstreamAddress = upstream.address() as AddressInfo;
+  const provider: ProviderConfig = {
+    name: 'empty-history-provider',
+    listen: { host: '127.0.0.1', port: 0 },
+    endpoints: { 'openai-completions': `http://127.0.0.1:${upstreamAddress.port}/v1/chat/completions` },
+    models: {},
+  };
+  const historyDirectory = path.join(runtimeHome, 'history');
+  const proxy = createProxyServer(provider, undefined, historyDirectory);
+  proxy.listen(0, '127.0.0.1');
+  await once(proxy, 'listening');
+  const proxyAddress = proxy.address() as AddressInfo;
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${proxyAddress.port}/openai/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    assert.deepEqual(await response.json(), { ok: true });
+    await assert.rejects(
+      readFile(path.join(historyDirectory, 'empty-history-provider.jsonl'), 'utf8'),
+      { code: 'ENOENT' },
+    );
+  } finally {
+    await Promise.all([
+      new Promise<void>((resolve, reject) => proxy.close((error) => (error ? reject(error) : resolve()))),
+      new Promise<void>((resolve, reject) => upstream.close((error) => (error ? reject(error) : resolve()))),
+    ]);
+    await rm(runtimeHome, { recursive: true, force: true });
+  }
+});
