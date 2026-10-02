@@ -1,5 +1,7 @@
 # llm-proxy
 
+[![CI](https://github.com/yuanstrong/llm-proxy/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yuanstrong/llm-proxy/actions/workflows/ci.yml)
+
 `llm-proxy` is a local TypeScript proxy manager for routing Claude-compatible client requests to multiple configured LLM providers. A resident management server runs on port `3000`; each provider can be started as an independent child proxy process on its own configured port.
 
 ## Features
