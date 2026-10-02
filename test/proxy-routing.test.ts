@@ -108,6 +108,58 @@ test('does not append the Anthropic path twice when the endpoint is already comp
   }
 });
 
+test('routes OpenAI paths under the /openai base path', async () => {
+  const upstreamPaths: string[] = [];
+  const upstream = http.createServer((req, res) => {
+    upstreamPaths.push(req.url ?? '');
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end('{"ok":true}');
+  });
+  upstream.listen(0, '127.0.0.1');
+  await once(upstream, 'listening');
+  const upstreamAddress = upstream.address() as AddressInfo;
+
+  const provider: ProviderConfig = {
+    name: 'deepseek',
+    listen: { host: '127.0.0.1', port: 0 },
+    endpoints: {
+      'openai-completions': `http://127.0.0.1:${upstreamAddress.port}/v1/chat/completions`,
+      'openai-responses': `http://127.0.0.1:${upstreamAddress.port}/v1/responses`,
+    },
+    models: {},
+  };
+  const proxy = createProxyServer(provider);
+  proxy.listen(0, '127.0.0.1');
+  await once(proxy, 'listening');
+  const proxyAddress = proxy.address() as AddressInfo;
+
+  try {
+    const completionsResponse = await fetch(
+      `http://127.0.0.1:${proxyAddress.port}/openai/v1/chat/completions`,
+      { method: 'POST', body: '{}' },
+    );
+    assert.equal(completionsResponse.status, 200);
+
+    const responsesResponse = await fetch(
+      `http://127.0.0.1:${proxyAddress.port}/openai/v1/responses`,
+      { method: 'POST', body: '{}' },
+    );
+    assert.equal(responsesResponse.status, 200);
+
+    const legacyResponse = await fetch(
+      `http://127.0.0.1:${proxyAddress.port}/v1/chat/completions`,
+      { method: 'POST', body: '{}' },
+    );
+    assert.equal(legacyResponse.status, 400);
+    assert.deepEqual(upstreamPaths, ['/v1/chat/completions', '/v1/responses']);
+  } finally {
+    await Promise.all([
+      new Promise<void>((resolve, reject) => proxy.close((error) => (error ? reject(error) : resolve()))),
+      new Promise<void>((resolve, reject) => upstream.close((error) => (error ? reject(error) : resolve()))),
+    ]);
+  }
+});
+
 test('rejects paths that only start with the Anthropic messages path', async () => {
   const provider: ProviderConfig = {
     name: 'deepseek',

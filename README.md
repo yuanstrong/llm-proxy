@@ -104,7 +104,7 @@ Open `http://127.0.0.1:3000/` in a browser. The UI shows the configured provider
 The proxy ports are only available after starting their provider from the UI. For example, after starting `deepseek`:
 
 ```text
-http://127.0.0.1:9876/v1/chat/completions
+http://127.0.0.1:8964/openai/v1/chat/completions
 ```
 
 For development with automatic restart:
@@ -129,6 +129,10 @@ On startup, the manager prints port `3000` and the number of configured provider
 
 ## Request routing
 
+Each provider listener exposes protocol-specific local base paths. Configure Claude Code with
+`http://127.0.0.1:<provider-port>/anthropic` and Codex with
+`http://127.0.0.1:<provider-port>/openai`.
+
 The request path determines the API format:
 
 | Client path | Format | Configuration key |
@@ -136,16 +140,18 @@ The request path determines the API format:
 | `HEAD /anthropic` | Anthropic health check | local |
 | `GET /anthropic/v1/models` | Anthropic Models | local provider model mappings |
 | `/anthropic/v1/messages` | Anthropic Messages | `anthropic` |
-| `/v1/chat/completions` | OpenAI Chat Completions | `openai-completions` |
-| `/v1/responses` | OpenAI Responses | `openai-responses` |
+| `/openai/v1/chat/completions` | OpenAI Chat Completions | `openai-completions` |
+| `/openai/v1/responses` | OpenAI Responses | `openai-responses` |
 
 The proxy ignores query strings when detecting the format. `HEAD /anthropic` returns a local health-check response. `GET /anthropic/v1/models` returns the configured client-facing model IDs in Anthropic Models API format and supports `limit` from 1 to 1000. Other paths that do not exactly match a supported API path return `400`. If the configured provider child does not define an endpoint for the detected format, the proxy also returns `400`.
+
+The local `/anthropic` and `/openai` prefixes are independent from the upstream URLs in `providers.<name>.endpoints`. For example, a request to `/openai/v1/chat/completions` uses that provider's `openai-completions` endpoint, while a request to `/anthropic/v1/messages` uses its `anthropic` endpoint. The proxy does not convert Anthropic requests to OpenAI requests, or vice versa.
 
 For a JSON request body, the proxy replaces `model` only when that model appears in the configured mapping. It updates `Content-Length` after a replacement. Invalid JSON and unmapped models pass through unchanged. For Anthropic requests, an endpoint configured as a base URL (for example `https://api.deepseek.com/anthropic`) receives `/v1/messages`; an endpoint that already ends in `/v1/messages` is used as-is.
 
 Debug request logs include the provider name, HTTP method, URL, response status, whether the response finished or the client disconnected, and processing duration. Request and response bodies are not logged.
 
-The proxy does not convert Anthropic requests to OpenAI requests, or vice versa. Each provider child must support the format that its client sends.
+Each provider child must support the format that its client sends.
 
 ## Error handling and scope
 

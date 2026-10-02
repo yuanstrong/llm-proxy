@@ -5,8 +5,8 @@ import { proxyRequest } from './proxy';
 
 const PATH_FORMAT_MAP: Array<{ prefix: string; format: ApiFormat }> = [
   { prefix: '/anthropic/v1/messages', format: 'anthropic' },
-  { prefix: '/v1/chat/completions', format: 'openai-completions' },
-  { prefix: '/v1/responses', format: 'openai-responses' },
+  { prefix: '/openai/v1/chat/completions', format: 'openai-completions' },
+  { prefix: '/openai/v1/responses', format: 'openai-responses' },
 ];
 
 const UNKNOWN_MODEL_CREATED_AT = '1970-01-01T00:00:00Z';
@@ -75,7 +75,7 @@ function handleProxyRequest(
     logger.warn(`Unsupported API path: ${req.url ?? '/'}`);
     res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end(
-      'Unsupported API format. Supported paths: /anthropic/v1/messages, /v1/chat/completions, /v1/responses',
+      'Unsupported API format. Supported paths: /anthropic/v1/messages, /openai/v1/chat/completions, /openai/v1/responses',
     );
     return;
   }
