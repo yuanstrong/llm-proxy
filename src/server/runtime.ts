@@ -15,9 +15,14 @@ export function getLogDirectory(env: NodeJS.ProcessEnv = process.env): string {
   return path.join(getRuntimeHome(env), 'var', 'logs');
 }
 
+export function getHistoryDirectory(env: NodeJS.ProcessEnv = process.env): string {
+  return path.join(getRuntimeHome(env), 'var', 'history');
+}
+
 export function ensureRuntimeDirectories(env: NodeJS.ProcessEnv = process.env): string {
   const pidDirectory = getPidDirectory(env);
   fs.mkdirSync(pidDirectory, { recursive: true });
   fs.mkdirSync(getLogDirectory(env), { recursive: true });
+  fs.mkdirSync(getHistoryDirectory(env), { recursive: true });
   return pidDirectory;
 }

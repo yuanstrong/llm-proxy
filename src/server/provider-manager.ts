@@ -10,12 +10,14 @@ type SpawnProvider = (
   providerName: string,
   provider: ProviderConfig,
   config: AppConfig,
+  env?: NodeJS.ProcessEnv,
 ) => ChildProcess;
 
 function defaultSpawnProvider(
   providerName: string,
   provider: ProviderConfig,
   config: AppConfig,
+  env: NodeJS.ProcessEnv = process.env,
 ): ChildProcess {
   const providerEntry = path.resolve(__dirname, 'provider' + (path.extname(__filename) === '.ts' ? '.ts' : '.js'));
   const args = path.extname(providerEntry) === '.ts'
@@ -25,6 +27,7 @@ function defaultSpawnProvider(
   return spawn(process.execPath, args, {
     env: {
       ...process.env,
+      ...env,
       LLM_PROXY_CONFIG: config.configPath,
       LLM_PROXY_PROVIDER: providerName,
       LLM_PROXY_LOG_LEVEL: provider.log_level ?? 'info',
@@ -117,7 +120,7 @@ export class ProviderManager implements ProviderManagerApi {
     }
     this.removePid(pidPath);
 
-    const child = this.spawnProvider(name, provider, this.config);
+    const child = this.spawnProvider(name, provider, this.config, this.env);
     if (!child.pid) {
       throw new Error(`Failed to start provider '${name}': child process has no PID`);
     }

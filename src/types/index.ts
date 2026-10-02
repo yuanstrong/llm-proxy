@@ -23,9 +23,36 @@ export interface ProviderStatus {
   pid?: number;
 }
 
+export interface ProviderOverview extends ProviderStatus {
+  endpoints: Partial<Record<ApiFormat, string>>;
+  logLevel: LogLevel;
+  baseUrls: {
+    openai: string;
+    anthropic: string;
+  };
+}
+
 export interface ManagementStatus {
   providerCount: number;
-  providers: ProviderStatus[];
+  providers: ProviderOverview[];
+}
+
+export interface LogEntry {
+  timestamp?: string;
+  provider: string;
+  level: LogLevel;
+  message: string;
+}
+
+export interface PromptHistoryEntry {
+  timestamp: string;
+  provider: string;
+  format: ApiFormat;
+  model?: string;
+  prompt: string;
+  response: string;
+  status: number;
+  durationMs: number;
 }
 
 export interface ProviderManagerApi {

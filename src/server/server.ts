@@ -2,6 +2,7 @@ import * as http from 'node:http';
 import type { ApiFormat, ProviderConfig } from '../types';
 import { createLogger, type Logger } from './logger';
 import { proxyRequest } from './proxy';
+import { getHistoryDirectory } from './runtime';
 
 const PATH_FORMAT_MAP: Array<{ prefix: string; format: ApiFormat }> = [
   { prefix: '/anthropic/v1/messages', format: 'anthropic' },
@@ -68,6 +69,7 @@ function handleProxyRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   logger: Logger,
+  historyDirectory: string,
 ): void {
   const pathname = (req.url ?? '/').split('?')[0];
   const match = PATH_FORMAT_MAP.find(({ prefix }) => pathname === prefix);
@@ -91,10 +93,23 @@ function handleProxyRequest(
     return;
   }
 
-  proxyRequest(req, res, targetUrl, provider.models, provider.api_key, match.format, logger);
+  proxyRequest(
+    req,
+    res,
+    targetUrl,
+    provider.models,
+    provider.api_key,
+    match.format,
+    logger,
+    { provider: provider.name, directory: historyDirectory },
+  );
 }
 
-export function createProxyServer(provider: ProviderConfig, logger = createLogger(provider.log_level ?? 'info')): http.Server {
+export function createProxyServer(
+  provider: ProviderConfig,
+  logger = createLogger(provider.log_level ?? 'info'),
+  historyDirectory = getHistoryDirectory(),
+): http.Server {
   return http.createServer((req, res) => {
     const method = req.method ?? 'UNKNOWN';
     const requestUrl = req.url ?? '/';
@@ -116,7 +131,7 @@ export function createProxyServer(provider: ProviderConfig, logger = createLogge
     res.once('finish', () => logResult('finished'));
     res.once('close', () => logResult('closed'));
     if (handleAnthropicControlRequest(provider, req, res)) return;
-    handleProxyRequest(provider, req, res, logger);
+    handleProxyRequest(provider, req, res, logger, historyDirectory);
   });
 }
 

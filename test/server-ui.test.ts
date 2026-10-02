@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import test from 'node:test';
 import type { AddressInfo } from 'node:net';
 import os from 'node:os';
@@ -14,7 +14,11 @@ const providers = {
   deepseek: {
     name: 'deepseek',
     listen: { host: '127.0.0.1', port: 9876 },
-    endpoints: { 'openai-completions': 'http://127.0.0.1:9/v1/chat/completions' },
+    log_level: 'debug',
+    endpoints: {
+      anthropic: 'https://api.deepseek.com/anthropic',
+      'openai-completions': 'http://127.0.0.1:9/v1/chat/completions',
+    },
     models: { 'claude-sonnet-4-6': 'test-model' },
     api_key: 'must-not-be-returned',
   },
@@ -55,7 +59,7 @@ function fakeManager(): ProviderManagerApi & { calls: string[] } {
   };
 }
 
-test('admin status returns provider count and never exposes API keys', async () => {
+test('admin overview returns provider metadata and never exposes API keys', async () => {
   const manager = fakeManager();
   const server = createManagementServer(config, manager);
   server.listen(0, '127.0.0.1');
@@ -67,12 +71,101 @@ test('admin status returns provider count and never exposes API keys', async () 
 
   assert.equal(response.status, 200);
   assert.equal(body.providerCount, 2);
-  assert.deepEqual(body.providers, running);
+  assert.deepEqual(body.providers, [
+    {
+      ...running[0],
+      endpoints: providers.deepseek.endpoints,
+      logLevel: 'debug',
+      baseUrls: {
+        openai: 'http://127.0.0.1:9876/openai',
+        anthropic: 'http://127.0.0.1:9876/anthropic',
+      },
+    },
+    {
+      ...running[1],
+      endpoints: providers.ollama.endpoints,
+      logLevel: 'info',
+      baseUrls: {
+        openai: 'http://127.0.0.1:9877/openai',
+        anthropic: 'http://127.0.0.1:9877/anthropic',
+      },
+    },
+  ]);
   assert.equal(JSON.stringify(body).includes('must-not-be-returned'), false);
 
   await new Promise<void>((resolve, reject) =>
     server.close((error) => (error ? reject(error) : resolve())),
   );
+});
+
+test('admin logs can be filtered by provider and level', async () => {
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'llm-proxy-observability-'));
+  await mkdir(path.join(runtimeHome, 'var', 'logs'), { recursive: true });
+  await writeFile(
+    path.join(runtimeHome, 'var', 'logs', 'deepseek.log'),
+    '[deepseek] [debug] request provider=deepseek method=POST url=/openai/v1/chat/completions\n' +
+      '[deepseek] [error] upstream failed\n',
+  );
+  await writeFile(
+    path.join(runtimeHome, 'var', 'logs', 'ollama.log'),
+    '[ollama] [info] listening\n',
+  );
+  const server = createManagementServer(config, fakeManager(), undefined, { LLM_PROXY_HOME: runtimeHome });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address() as AddressInfo;
+
+  try {
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/admin/api/logs?provider=deepseek&level=error`,
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), [
+      { provider: 'deepseek', level: 'error', message: 'upstream failed' },
+    ]);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    await rm(runtimeHome, { recursive: true, force: true });
+  }
+});
+
+test('admin prompt history is returned newest first and can be filtered by provider', async () => {
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'llm-proxy-history-'));
+  await mkdir(path.join(runtimeHome, 'var', 'history'), { recursive: true });
+  const older = {
+    timestamp: '2026-10-02T08:00:00.000Z',
+    provider: 'deepseek',
+    format: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    prompt: 'Earlier prompt',
+    response: 'Earlier response',
+    status: 200,
+    durationMs: 120,
+  };
+  const newer = { ...older, timestamp: '2026-10-02T09:00:00.000Z', prompt: 'Latest prompt' };
+  await writeFile(
+    path.join(runtimeHome, 'var', 'history', 'deepseek.jsonl'),
+    `${JSON.stringify(older)}\n${JSON.stringify(newer)}\n`,
+  );
+  const server = createManagementServer(config, fakeManager(), undefined, { LLM_PROXY_HOME: runtimeHome });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address() as AddressInfo;
+
+  try {
+    const response = await fetch(
+      `http://127.0.0.1:${address.port}/admin/api/prompt-history?provider=deepseek`,
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), [newer, older]);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    await rm(runtimeHome, { recursive: true, force: true });
+  }
 });
 
 test('management page and provider controls are served by the manager port', async () => {

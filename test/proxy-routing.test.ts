@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import * as http from 'node:http';
 import { once } from 'node:events';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import test from 'node:test';
 import type { AddressInfo } from 'node:net';
+import os from 'node:os';
+import path from 'node:path';
 import { createLogger } from '../src/server/logger';
 import { createProxyServer } from '../src/server/server';
 import type { ProviderConfig } from '../src/types';
@@ -232,5 +235,55 @@ test('serves the Anthropic health check and configured model list locally', asyn
     });
   } finally {
     await new Promise<void>((resolve, reject) => proxy.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test('captures OpenAI prompt and response in prompt history without changing the response', async () => {
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'llm-proxy-history-'));
+  const upstream = http.createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    req.on('end', () => {
+      assert.match(Buffer.concat(chunks).toString('utf8'), /Hello provider/);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ choices: [{ message: { content: 'Hello user' } }] }));
+    });
+  });
+  upstream.listen(0, '127.0.0.1');
+  await once(upstream, 'listening');
+  const upstreamAddress = upstream.address() as AddressInfo;
+  const provider: ProviderConfig = {
+    name: 'history-provider',
+    listen: { host: '127.0.0.1', port: 0 },
+    endpoints: { 'openai-completions': `http://127.0.0.1:${upstreamAddress.port}/v1/chat/completions` },
+    models: {},
+  };
+  const proxy = createProxyServer(provider, undefined, path.join(runtimeHome, 'history'));
+  proxy.listen(0, '127.0.0.1');
+  await once(proxy, 'listening');
+  const proxyAddress = proxy.address() as AddressInfo;
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${proxyAddress.port}/openai/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'gpt-test', messages: [{ role: 'user', content: 'Hello provider' }] }),
+    });
+    assert.deepEqual(await response.json(), { choices: [{ message: { content: 'Hello user' } }] });
+    const history = JSON.parse(
+      (await readFile(path.join(runtimeHome, 'history', 'history-provider.jsonl'), 'utf8')).trim(),
+    ) as Record<string, unknown>;
+    assert.equal(history.provider, 'history-provider');
+    assert.equal(history.format, 'openai-completions');
+    assert.equal(history.model, 'gpt-test');
+    assert.equal(history.prompt, 'Hello provider');
+    assert.equal(history.response, 'Hello user');
+    assert.equal(history.status, 200);
+  } finally {
+    await Promise.all([
+      new Promise<void>((resolve, reject) => proxy.close((error) => (error ? reject(error) : resolve()))),
+      new Promise<void>((resolve, reject) => upstream.close((error) => (error ? reject(error) : resolve()))),
+    ]);
+    await rm(runtimeHome, { recursive: true, force: true });
   }
 });

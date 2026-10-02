@@ -2,6 +2,7 @@ import { IncomingMessage, ServerResponse } from 'http';
 import * as http from 'http';
 import * as https from 'https';
 import type { ApiFormat } from '../types';
+import { appendPromptHistory, createHistoryEntry, extractRequestDetails } from './history';
 import type { Logger } from './logger';
 
 function resolveTargetUrl(targetUrl: string, format: ApiFormat): URL {
@@ -22,6 +23,7 @@ export function proxyRequest(
   apiKey?: string,
   format: ApiFormat = 'openai-completions',
   logger?: Logger,
+  history?: { provider: string; directory: string },
 ): void {
   const bodyChunks: Buffer[] = [];
 
@@ -32,6 +34,10 @@ export function proxyRequest(
   req.on('end', () => {
     const bodyBuffer = Buffer.concat(bodyChunks);
     let finalBody = bodyBuffer;
+    const requestDetails = history
+      ? extractRequestDetails(bodyBuffer.toString('utf8'))
+      : undefined;
+    const startedAt = process.hrtime.bigint();
 
     const headers: Record<string, string | string[] | undefined> = {
       ...req.headers,
@@ -75,6 +81,30 @@ export function proxyRequest(
     const transport = isHttps ? https : http;
 
     const proxyReq = transport.request(options, (proxyRes) => {
+      const responseChunks: Buffer[] = [];
+      let responseSize = 0;
+      proxyRes.on('data', (chunk: Buffer) => {
+        if (responseSize >= 512_000) return;
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        const remaining = 512_000 - responseSize;
+        responseChunks.push(buffer.subarray(0, remaining));
+        responseSize += Math.min(buffer.length, remaining);
+      });
+      proxyRes.once('end', () => {
+        if (!history || !requestDetails) return;
+        try {
+          appendPromptHistory(history.directory, createHistoryEntry(
+            history.provider,
+            format,
+            requestDetails,
+            Buffer.concat(responseChunks).toString('utf8'),
+            proxyRes.statusCode ?? 502,
+            Number(process.hrtime.bigint() - startedAt) / 1_000_000,
+          ));
+        } catch (error) {
+          logger?.warn(`Unable to write prompt history: ${error instanceof Error ? error.message : 'unknown error'}`);
+        }
+      });
       res.writeHead(proxyRes.statusCode ?? 502, proxyRes.headers);
       proxyRes.pipe(res, { end: true });
     });

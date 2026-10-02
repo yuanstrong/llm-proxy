@@ -15,6 +15,11 @@
 - Starts and stops providers through the UI or management API.
 - Stores provider PID files under `$LLM_PROXY_HOME/var/pids`.
 - Captures each provider's stdout/stderr under `$LLM_PROXY_HOME/var/logs/<provider>.log` and prefixes those lines in the manager console.
+- Shows configured and running providers, supported upstream endpoints, and copyable OpenAI/Anthropic client base URLs in the management console.
+- Provides provider/level log filtering and a newest-first prompt history for proxied requests and provider responses.
+- Stores prompt history as JSONL under `$LLM_PROXY_HOME/var/history/<provider>.jsonl`.
+- Uses React with Tailwind CSS, local shadcn/ui primitives, and lucide-react icons for the management console.
+- Uses Winston for provider log levels, formatting, console transports, and testable log transports.
 - Flushes both provider log files and the manager console forwarding before a provider stop or manager shutdown completes.
 - At `debug` level, logs every proxy request and its final response status, outcome, and duration.
 
@@ -99,7 +104,11 @@ The manager listens on:
 
 - Management console: `http://127.0.0.1:3000/`
 
-Open `http://127.0.0.1:3000/` in a browser. The UI shows the configured provider count and lets you start or stop each provider.
+Open `http://127.0.0.1:3000/` in a browser. The console has three views:
+
+- Overview lists every configured provider, its running state, supported upstream endpoints, and copyable `/openai` and `/anthropic` base URLs. Expand a provider to start or stop it.
+- Logs can be filtered by provider and exact log level (`debug`, `info`, `warn`, or `error`).
+- Prompt history lists captured user prompts and provider responses in reverse chronological order, with provider, model, format, status, and duration metadata.
 
 The proxy ports are only available after starting their provider from the UI. For example, after starting `deepseek`:
 
@@ -153,6 +162,8 @@ Debug request logs include the provider name, HTTP method, URL, response status,
 
 Each provider child must support the format that its client sends.
 
+The management API used by the console is available at `GET /admin/api/status`, `GET /admin/api/logs`, and `GET /admin/api/prompt-history`. Log requests accept `provider`, `level`, and `limit` query parameters; history requests accept `provider` and `limit`. Prompt history stores extracted text from common Anthropic/OpenAI JSON and SSE responses, with a bounded response capture. API keys are not included in management API responses.
+
 ## Error handling and scope
 
 - Upstream connection errors return `502 Bad Gateway` when no response has been sent yet.
@@ -173,6 +184,7 @@ src/
 │   ├── management-server.ts # Management API and static UI server
 │   ├── provider-manager.ts # Provider child processes and PID files
 │   ├── provider.ts # Child-process proxy entry point
+│   ├── logger.ts   # Winston logger factory and transports
 │   ├── runtime.ts  # LLM_PROXY_HOME and runtime directories
 │   ├── proxy.ts   # Rewrites model names and forwards requests
 │   └── ui.ts      # Serves the built management console
@@ -180,8 +192,11 @@ src/
 │   └── index.ts   # Backend/frontend shared TypeScript types
 └── ui/
     ├── index.html # Management console shell
-    ├── main.ts    # Status fetching and rendering
-    └── styles.css # Console styling
+    ├── main.tsx   # React entrypoint
+    ├── App.tsx    # Console shell and view state
+    ├── components/ # Overview, logs, history, and shadcn/ui primitives
+    ├── lib/       # API helpers and cn() utility
+    └── styles.css # Tailwind theme and global styles
 ```
 
 ## License

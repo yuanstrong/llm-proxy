@@ -4,7 +4,10 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "lib": ["ES2022", "DOM"],
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": { "@/*": ["src/ui/*"] },
     "noEmit": true
   },
-  "include": ["src/ui/**/*.ts", "src/types/**/*.ts"]
+  "include": ["src/ui/**/*.ts", "src/ui/**/*.tsx", "src/types/**/*.ts"]
 }
