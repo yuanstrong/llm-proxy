@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Activity, AlertTriangle, BookOpenText, CheckCircle2, LoaderCircle, RefreshCw, ScrollText, WifiOff } from 'lucide-react';
+import { Activity, AlertTriangle, BookOpenText, CheckCircle2, RefreshCw, ScrollText, WifiOff } from 'lucide-react';
 import type { ManagementStatus, ProviderOverview } from '../types';
 import { changeProviderState, getStatus } from '@/lib/api';
 import { Button } from '@/components/ui/button';

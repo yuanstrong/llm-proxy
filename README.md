@@ -20,6 +20,7 @@
 - Stores prompt history as JSONL under `$LLM_PROXY_HOME/var/history/<provider>.jsonl`.
 - Uses React with Tailwind CSS, local shadcn/ui primitives, and lucide-react icons for the management console.
 - Uses Winston for provider log levels, formatting, console transports, and testable log transports.
+- Runs lint, unit tests, build, and artifact upload as sequential GitHub Actions jobs.
 - Flushes both provider log files and the manager console forwarding before a provider stop or manager shutdown completes.
 - At `debug` level, logs every proxy request and its final response status, outcome, and duration.
 
@@ -99,6 +100,16 @@ pnpm install
 pnpm run build
 pnpm run start:built
 ```
+
+Run the same checks locally as CI:
+
+```bash
+pnpm lint
+pnpm test
+pnpm run build
+```
+
+The GitHub Actions workflow runs these stages in order: `lint` → `unit-test` → `build` → `upload-artifact`. The final build artifact is published as `llm-proxy-dist`.
 
 The manager listens on:
 
