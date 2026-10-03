@@ -136,6 +136,67 @@ pnpm run build:ui
 pnpm dev
 ```
 
+## macOS LaunchAgent installation
+
+The first-phase macOS installer runs as the logged-in user. It installs production dependencies into a versioned application directory, creates a user-level `LaunchAgent`, and keeps configuration/runtime data outside the versioned release.
+
+Build and install from the project root:
+
+```bash
+pnpm install
+pnpm run build
+./installer/macos/prepare-release.sh /tmp/llm-proxy-release
+cd /tmp/llm-proxy-release
+./installer/macos/install.sh --check
+./installer/macos/install.sh
+```
+
+`prepare-release.sh` generates a fresh `package-lock.json` during packaging. The target machine only needs Node.js with npm; pnpm is not required there. Service control is available through:
+
+```bash
+./installer/macos/service.sh status
+./installer/macos/service.sh restart
+./installer/macos/service.sh stop
+./installer/macos/install.sh --yes
+```
+
+The installed version comes from `package.json.version`. The installer keeps
+the active release and up to four historical releases under
+`~/Library/Application Support/llm-proxy/releases/`. If an installation
+already exists, `install.sh` asks for confirmation before upgrading. The
+upgrade stops the LaunchAgent, switches the `current` symlink, starts the new
+release, and verifies `http://127.0.0.1:3000/`. If verification fails, it
+restores the previous release automatically. Use `install.sh --yes` for a
+non-interactive upgrade.
+
+When installing, `${NAME}` references in `config.toml` are checked. Missing values are requested interactively and stored in the persistent `.env` file under the application support directory; non-interactive installs fail with an actionable error.
+
+The management console remains at `http://127.0.0.1:3000/`. If several
+releases are installed, `uninstall.sh` asks whether to remove all versions or
+remove only the active version and roll back one version. In a non-interactive
+environment, use `uninstall.sh --yes` for full removal or
+`uninstall.sh --rollback` for the rollback choice. Uninstalling preserves
+configuration and runtime data unless `--purge-data` is explicitly provided.
+See [`installer/macos/README.md`](installer/macos/README.md) for paths, update
+behavior, and test overrides.
+
+Manual rollback is also available:
+
+```bash
+./installer/macos/rollback.sh
+./installer/macos/rollback.sh 1.2.3 --yes
+```
+
+To verify the service after installation:
+
+```bash
+launchctl print "gui/$(id -u)/com.example.llm-proxy"
+./installer/macos/service.sh status
+curl --fail --silent --show-error http://127.0.0.1:3000/ >/dev/null
+```
+
+The service is healthy when `launchctl print` reports `state = running` and the `curl` command succeeds. If it reports `state = spawn scheduled` or a non-zero exit code, inspect `manager.stderr.log` under `~/Library/Application Support/llm-proxy/runtime/`. See [`installer/macos/README.md`](installer/macos/README.md) for the complete installation checklist.
+
 Build the backend and management console separately, or together:
 
 ```bash

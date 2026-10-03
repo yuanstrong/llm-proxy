@@ -3,7 +3,7 @@ import { loadDotEnv } from './env';
 import { createManagementServer } from './management-server';
 import { ProviderManager } from './provider-manager';
 
-loadDotEnv();
+loadDotEnv(process.env.LLM_PROXY_ENV ?? './.env');
 const config = loadConfig(process.env.LLM_PROXY_CONFIG);
 const manager = new ProviderManager(config);
 const server = createManagementServer(config, manager);

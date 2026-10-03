@@ -4,7 +4,7 @@ import { createLogger } from './logger';
 import { createProxyServer } from './server';
 
 const providerName = process.argv[2] ?? process.env.LLM_PROXY_PROVIDER;
-loadDotEnv();
+loadDotEnv(process.env.LLM_PROXY_ENV ?? './.env');
 if (!providerName) {
   console.error('Provider name is required');
   process.exit(1);
