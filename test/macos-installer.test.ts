@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { access, chmod, mkdir, mkdtemp, readFile, readlink, rm, symlink, writeFile } from 'node:fs/promises';
+import { access, chmod, mkdir, mkdtemp, readFile, readlink, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import test from 'node:test';
 import os from 'node:os';
 import path from 'node:path';
@@ -314,8 +314,11 @@ test('upgrade retains the current release and only the four newest historical re
     await writeFile(path.join(sourceRoot, 'dist', 'server', 'server', 'index.js'), '');
     await writeFile(path.join(sourceRoot, 'dist', 'server', 'server', 'provider.js'), '');
     await writeFile(path.join(sourceRoot, 'dist', 'ui', 'index.html'), '<!doctype html>');
+    const tiedHistoricalMtime = new Date('2030-01-01T00:00:00.000Z');
     for (const version of ['1.0.0', '2.0.0', '3.0.0', '4.0.0', '5.0.0']) {
-      await mkdir(path.join(releasesRoot, version), { recursive: true });
+      const releasePath = path.join(releasesRoot, version);
+      await mkdir(releasePath, { recursive: true });
+      await utimes(releasePath, tiedHistoricalMtime, tiedHistoricalMtime);
     }
     await symlink(path.join(releasesRoot, '5.0.0'), path.join(installRoot, 'current'));
     await writeFile(fakeNpm, '#!/bin/bash\nmkdir -p node_modules\n');

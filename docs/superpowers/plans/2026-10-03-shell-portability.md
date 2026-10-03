@@ -40,7 +40,7 @@ Run `node --import tsx --test test/macos-installer.test.ts`. Expected: failure b
 
 - [x] **Step 1: Replace zsh-only output and array constructs**
 
-Use `printf` instead of `print`, Bash arrays and `nullglob` for release directory discovery, and `while IFS= read -r` loops instead of zsh `${(f)}` splitting. Preserve ordering by modification time and the existing five-release retention policy.
+Use `printf` instead of `print`, Bash arrays and `nullglob` for release directory discovery, and `while IFS= read -r` loops instead of zsh `${(f)}` splitting. Preserve ordering by modification time and the existing five-release retention policy, with a deterministic version-name tie-break when filesystem timestamp precision makes releases share an mtime.
 
 - [x] **Step 2: Preserve platform validation with an explicit test override**
 

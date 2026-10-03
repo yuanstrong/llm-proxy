@@ -89,14 +89,32 @@ current_release_version() {
 release_dirs_by_mtime() {
   [[ -d "$RELEASES_DIR" ]] || return 0
 
-  local -a dirs
-  local dir
+  local -a dirs records
+  local dir mtime version
   shopt -s nullglob
   dirs=( "$RELEASES_DIR"/[0-9]* )
   shopt -u nullglob
   ((${#dirs[@]} > 0)) || return 0
 
-  ls -dt "${dirs[@]}" 2>/dev/null
+  # Sort by mtime, then by version for equal timestamps. The explicit
+  # secondary key avoids filesystem- and ls-specific tie ordering when rapid
+  # installs share the same timestamp precision.
+  records=()
+  for dir in "${dirs[@]}"; do
+    case "$(uname -s)" in
+      Darwin)
+        mtime="$(stat -f '%m' "$dir")" || continue
+        ;;
+      *)
+        mtime="$(stat -c '%Y' "$dir")" || continue
+        ;;
+    esac
+    version="$(basename "$dir")"
+    records+=( "$mtime"$'\t'"$version"$'\t'"$dir" )
+  done
+
+  ((${#records[@]} > 0)) || return 0
+  printf '%s\n' "${records[@]}" | sort -t $'\t' -k1,1rn -k2,2r | cut -f3-
 }
 
 release_versions() {
