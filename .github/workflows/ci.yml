@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['*']
   pull_request:
 
 permissions:
@@ -82,9 +83,80 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  release:
+    name: Release macOS installer
+    needs: build
+    if: ${{ github.ref_type == 'tag' }}
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag points to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --no-tags
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "Tag $GITHUB_REF_NAME does not point to a commit on main" >&2
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download build output
+        uses: actions/download-artifact@v4
+        with:
+          name: ci-build-output
+          path: dist
+
+      - name: Prepare macOS installer package
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          tag_slug="${GITHUB_REF_NAME//\//-}"
+          release_dir="$RUNNER_TEMP/llm-proxy-release"
+          archive="$RUNNER_TEMP/llm-proxy-macos-${version}-${tag_slug}.tar.gz"
+
+          ./installer/macos/prepare-release.sh "$release_dir"
+          tar -czf "$archive" -C "$release_dir" .
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+          echo "Prepared $archive"
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARCHIVE: ${{ steps.package.outputs.archive }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$ARCHIVE" \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$ARCHIVE" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --generate-notes \
+              --title "$GITHUB_REF_NAME"
+          fi
+
   upload-artifact:
     name: Upload artifact
-    needs: build
+    needs: [build, release]
+    if: ${{ always() && needs.build.result == 'success' && (needs.release.result == 'success' || needs.release.result == 'skipped') }}
     runs-on: ubuntu-latest
     steps:
       - name: Download build output

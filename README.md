@@ -22,7 +22,7 @@
 - Stores prompt history as JSONL under `$LLM_PROXY_HOME/var/history/<provider>.jsonl`.
 - Uses React with Tailwind CSS, local shadcn/ui primitives, and lucide-react icons for the management console.
 - Uses Winston for provider log levels, formatting, console transports, and testable log transports.
-- Runs lint, unit tests, build, and artifact upload as sequential GitHub Actions jobs.
+- Runs lint, unit tests, build, optional tagged release, and artifact upload as sequential GitHub Actions jobs.
 - Flushes both provider log files and the manager console forwarding before a provider stop or manager shutdown completes.
 - At `debug` level, logs every proxy request and its final response status, outcome, and duration.
 
@@ -111,7 +111,18 @@ pnpm test
 pnpm run build
 ```
 
-The GitHub Actions workflow runs these stages in order: `lint` → `unit-test` → `build` → `upload-artifact`. The final build artifact is published as `llm-proxy-dist`.
+The GitHub Actions workflow runs these stages in order: `lint` → `unit-test` → `build` → `release` → `upload-artifact`. The `release` job runs only for a Git tag whose commit is on `main`; it is skipped for ordinary branch and pull-request builds. The final build artifact is published as `llm-proxy-dist`.
+
+To publish a macOS installer package, create and push a tag from `main`:
+
+```bash
+git checkout main
+git pull
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+The release job verifies that the tagged commit belongs to the `main` history, prepares the installer with a fresh `package-lock.json`, and uploads an archive named like `llm-proxy-macos-1.0.0-v1.0.1.tar.gz` to the GitHub Release. The archive includes the compiled application and installer scripts; the target Mac needs Node.js with npm, not pnpm.
 
 The manager listens on:
 
