@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/bin/bash
 
 set -euo pipefail
 
@@ -62,11 +62,11 @@ select_action() {
     die "multiple releases are installed: $versions; choose all releases or rollback one interactively, or pass --yes/--rollback"
   fi
 
-  print -- "Multiple releases are installed: $versions"
-  print -- "1) Remove all releases and stop the service"
-  print -- "2) Remove the active release and roll back one version"
-  print -- "3) Cancel"
-  print -n -- "Choose [1-3]: "
+  printf 'Multiple releases are installed: %s\n' "$versions"
+  printf '1) Remove all releases and stop the service\n'
+  printf '2) Remove the active release and roll back one version\n'
+  printf '3) Cancel\n'
+  printf 'Choose [1-3]: '
 
   local choice
   if ! read -r choice; then
@@ -99,11 +99,11 @@ uninstall_all() {
 
   if [[ "$PURGE_DATA" == true ]]; then
     rm -rf "$CONFIG_DIR" "$RUNTIME_HOME"
-    print -- "LLM Proxy uninstalled; configuration and runtime data removed"
+    printf 'LLM Proxy uninstalled; configuration and runtime data removed\n'
   else
-    print -- "LLM Proxy uninstalled; configuration and runtime data preserved"
-    print -- "  Config: $CONFIG_DIR"
-    print -- "  Runtime: $RUNTIME_HOME"
+    printf 'LLM Proxy uninstalled; configuration and runtime data preserved\n'
+    printf '  Config: %s\n' "$CONFIG_DIR"
+    printf '  Runtime: %s\n' "$RUNTIME_HOME"
   fi
 }
 
@@ -120,7 +120,7 @@ rollback_one() {
 
   [[ "$active_target" == "$RELEASES_DIR/"* ]] || die "active release is outside the managed releases directory: $active_target"
   rm -rf -- "$active_target"
-  print -- "Removed the previous active release; service remains on $previous_version"
+  printf 'Removed the previous active release; service remains on %s\n' "$previous_version"
 }
 
 main() {

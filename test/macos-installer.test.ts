@@ -7,6 +7,29 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
+const testPlatformEnv = { LLM_PROXY_ALLOW_NON_MACOS_TEST: '1' };
+
+async function validateGeneratedPlist(output: string) {
+  if (process.platform === 'darwin') {
+    try {
+      await access('/usr/bin/plutil');
+      await execFileAsync('/usr/bin/plutil', ['-lint', output]);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw error;
+      }
+    }
+  }
+
+  const plist = await readFile(output, 'utf8');
+  assert.match(plist, /<key>KeepAlive<\/key>\s*<true\/>/);
+  assert.match(plist, /LLM &amp; Proxy/);
+  assert.match(plist, /<string>\/opt\/homebrew\/bin\/node<\/string>/);
+  assert.match(plist, /<key>LLM_PROXY_CONFIG<\/key>/);
+  assert.match(plist, /<key>LLM_PROXY_HOME<\/key>/);
+  assert.match(plist, /<key>LLM_PROXY_ENV<\/key>/);
+  assert.match(plist, /config\/\.env/);
+}
 
 test('renders a LaunchAgent plist with absolute paths and XML escaping', async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), 'llm-proxy-plist-'));
@@ -24,16 +47,7 @@ test('renders a LaunchAgent plist with absolute paths and XML escaping', async (
       '/Users/tester/Library/Application Support/LLM & Proxy/runtime',
       '/Users/tester/Library/Application Support/LLM & Proxy/config/.env',
     ]);
-    await execFileAsync('/usr/bin/plutil', ['-lint', output]);
-
-    const plist = await readFile(output, 'utf8');
-    assert.match(plist, /<key>KeepAlive<\/key>\s*<true\/>/);
-    assert.match(plist, /LLM &amp; Proxy/);
-    assert.match(plist, /<string>\/opt\/homebrew\/bin\/node<\/string>/);
-    assert.match(plist, /<key>LLM_PROXY_CONFIG<\/key>/);
-    assert.match(plist, /<key>LLM_PROXY_HOME<\/key>/);
-    assert.match(plist, /<key>LLM_PROXY_ENV<\/key>/);
-    assert.match(plist, /config\/\.env/);
+    await validateGeneratedPlist(output);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
@@ -54,9 +68,10 @@ test('install check validates the release without registering a service', async 
     await writeFile(path.join(sourceRoot, 'dist', 'server', 'server', 'provider.js'), '');
     await writeFile(path.join(sourceRoot, 'dist', 'ui', 'index.html'), '<!doctype html>');
 
-    const result = await execFileAsync('/bin/zsh', [installer, '--check'], {
+    const result = await execFileAsync('/bin/bash', [installer, '--check'], {
       env: {
         ...process.env,
+        ...testPlatformEnv,
         LLM_PROXY_SOURCE_ROOT: sourceRoot,
         LLM_PROXY_INSTALL_ROOT: path.join(tempDir, 'app'),
         LLM_PROXY_LAUNCH_AGENT: plist,
@@ -85,8 +100,12 @@ test('install check rejects a pnpm-only release because target machines use npm'
     await writeFile(path.join(sourceRoot, 'dist', 'ui', 'index.html'), '<!doctype html>');
 
     await assert.rejects(
-      execFileAsync('/bin/zsh', [installer, '--check'], {
-        env: { ...process.env, LLM_PROXY_SOURCE_ROOT: sourceRoot },
+      execFileAsync('/bin/bash', [installer, '--check'], {
+        env: {
+          ...process.env,
+          ...testPlatformEnv,
+          LLM_PROXY_SOURCE_ROOT: sourceRoot,
+        },
       }),
       (error: NodeJS.ErrnoException & { stderr?: string }) => {
         assert.match(error.stderr ?? '', /package-lock\.json/i);
@@ -102,7 +121,7 @@ test('prepare-release generates package-lock.json with npm', async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), 'llm-proxy-prepare-release-'));
   const sourceRoot = path.join(tempDir, 'source');
   const outputDir = path.join(tempDir, 'release');
-  const fakeNpm = path.join(tempDir, 'fake-npm.zsh');
+  const fakeNpm = path.join(tempDir, 'fake-npm.bash');
   const npmLog = path.join(tempDir, 'npm.log');
   const prepareRelease = path.resolve('installer/macos/prepare-release.sh');
 
@@ -114,16 +133,17 @@ test('prepare-release generates package-lock.json with npm', async () => {
     await writeFile(path.join(sourceRoot, 'dist', 'server', 'server', 'index.js'), '');
     await writeFile(path.join(sourceRoot, 'dist', 'server', 'server', 'provider.js'), '');
     await writeFile(path.join(sourceRoot, 'dist', 'ui', 'index.html'), '<!doctype html>');
-    await writeFile(path.join(sourceRoot, 'installer', 'macos', 'install.sh'), '#!/bin/zsh');
+    await writeFile(path.join(sourceRoot, 'installer', 'macos', 'install.sh'), '#!/bin/bash');
     await writeFile(
       fakeNpm,
-      '#!/bin/zsh\nprintf "%s\\n" "$*" > "$FAKE_NPM_LOG"\nprintf \'{"lockfileVersion":3}\\n\' > package-lock.json\n',
+      '#!/bin/bash\nprintf "%s\\n" "$*" > "$FAKE_NPM_LOG"\nprintf \'{"lockfileVersion":3}\\n\' > package-lock.json\n',
     );
     await chmod(fakeNpm, 0o755);
 
-    await execFileAsync('/bin/zsh', [prepareRelease, outputDir], {
+    await execFileAsync('/bin/bash', [prepareRelease, outputDir], {
       env: {
         ...process.env,
+        ...testPlatformEnv,
         LLM_PROXY_SOURCE_ROOT: sourceRoot,
         LLM_PROXY_NPM_BIN: fakeNpm,
         FAKE_NPM_LOG: npmLog,
@@ -144,7 +164,7 @@ test('install exits successfully after moving the staging directory', async () =
   const sourceRoot = path.join(tempDir, 'release');
   const installRoot = path.join(tempDir, 'installed');
   const plist = path.join(tempDir, 'LaunchAgents', 'com.example.llm-proxy.plist');
-  const fakeNpm = path.join(tempDir, 'fake-npm.zsh');
+  const fakeNpm = path.join(tempDir, 'fake-npm.bash');
   const installer = path.resolve('installer/macos/install.sh');
 
   try {
@@ -156,12 +176,13 @@ test('install exits successfully after moving the staging directory', async () =
     await writeFile(path.join(sourceRoot, 'dist', 'server', 'server', 'index.js'), '');
     await writeFile(path.join(sourceRoot, 'dist', 'server', 'server', 'provider.js'), '');
     await writeFile(path.join(sourceRoot, 'dist', 'ui', 'index.html'), '<!doctype html>');
-    await writeFile(fakeNpm, '#!/bin/zsh\nmkdir -p node_modules\n');
+    await writeFile(fakeNpm, '#!/bin/bash\nmkdir -p node_modules\n');
     await chmod(fakeNpm, 0o755);
 
-    await execFileAsync('/bin/zsh', [installer], {
+    await execFileAsync('/bin/bash', [installer], {
       env: {
         ...process.env,
+        ...testPlatformEnv,
         LLM_PROXY_SOURCE_ROOT: sourceRoot,
         LLM_PROXY_INSTALL_ROOT: installRoot,
         LLM_PROXY_LAUNCH_AGENT: plist,
@@ -198,9 +219,10 @@ test('upgrade requires explicit confirmation when an active release exists', asy
     await symlink(path.join(installRoot, 'releases', '1.0.0'), path.join(installRoot, 'current'));
 
     await assert.rejects(
-      execFileAsync('/bin/zsh', [installer], {
+      execFileAsync('/bin/bash', [installer], {
         env: {
           ...process.env,
+          ...testPlatformEnv,
           LLM_PROXY_SOURCE_ROOT: sourceRoot,
           LLM_PROXY_INSTALL_ROOT: installRoot,
           LLM_PROXY_LAUNCH_AGENT: plist,
@@ -226,8 +248,8 @@ test('confirmed upgrade stops the old service and starts the new release', async
   const installRoot = path.join(tempDir, 'installed');
   const oldRelease = path.join(installRoot, 'releases', '1.0.0');
   const plist = path.join(tempDir, 'LaunchAgents', 'com.example.llm-proxy.plist');
-  const fakeNpm = path.join(tempDir, 'fake-npm.zsh');
-  const fakeLaunchctl = path.join(tempDir, 'fake-launchctl.zsh');
+  const fakeNpm = path.join(tempDir, 'fake-npm.bash');
+  const fakeLaunchctl = path.join(tempDir, 'fake-launchctl.bash');
   const launchctlLog = path.join(tempDir, 'launchctl.log');
   const installer = path.resolve('installer/macos/install.sh');
 
@@ -243,17 +265,18 @@ test('confirmed upgrade stops the old service and starts the new release', async
     await mkdir(oldRelease, { recursive: true });
     await writeFile(path.join(oldRelease, 'package.json'), '{"version":"1.0.0"}');
     await symlink(oldRelease, path.join(installRoot, 'current'));
-    await writeFile(fakeNpm, '#!/bin/zsh\nmkdir -p node_modules\n');
+    await writeFile(fakeNpm, '#!/bin/bash\nmkdir -p node_modules\n');
     await writeFile(
       fakeLaunchctl,
-      '#!/bin/zsh\nprintf "%s\\n" "$*" >> "$LLM_PROXY_LAUNCHCTL_LOG"\n',
+      '#!/bin/bash\nprintf "%s\\n" "$*" >> "$LLM_PROXY_LAUNCHCTL_LOG"\n',
     );
     await chmod(fakeNpm, 0o755);
     await chmod(fakeLaunchctl, 0o755);
 
-    await execFileAsync('/bin/zsh', [installer, '--yes'], {
+    await execFileAsync('/bin/bash', [installer, '--yes'], {
       env: {
         ...process.env,
+        ...testPlatformEnv,
         LLM_PROXY_SOURCE_ROOT: sourceRoot,
         LLM_PROXY_INSTALL_ROOT: installRoot,
         LLM_PROXY_LAUNCH_AGENT: plist,
@@ -279,7 +302,7 @@ test('upgrade retains the current release and only the four newest historical re
   const installRoot = path.join(tempDir, 'installed');
   const releasesRoot = path.join(installRoot, 'releases');
   const plist = path.join(tempDir, 'LaunchAgents', 'com.example.llm-proxy.plist');
-  const fakeNpm = path.join(tempDir, 'fake-npm.zsh');
+  const fakeNpm = path.join(tempDir, 'fake-npm.bash');
   const installer = path.resolve('installer/macos/install.sh');
 
   try {
@@ -295,12 +318,13 @@ test('upgrade retains the current release and only the four newest historical re
       await mkdir(path.join(releasesRoot, version), { recursive: true });
     }
     await symlink(path.join(releasesRoot, '5.0.0'), path.join(installRoot, 'current'));
-    await writeFile(fakeNpm, '#!/bin/zsh\nmkdir -p node_modules\n');
+    await writeFile(fakeNpm, '#!/bin/bash\nmkdir -p node_modules\n');
     await chmod(fakeNpm, 0o755);
 
-    await execFileAsync('/bin/zsh', [installer, '--yes'], {
+    await execFileAsync('/bin/bash', [installer, '--yes'], {
       env: {
         ...process.env,
+        ...testPlatformEnv,
         LLM_PROXY_SOURCE_ROOT: sourceRoot,
         LLM_PROXY_INSTALL_ROOT: installRoot,
         LLM_PROXY_LAUNCH_AGENT: plist,
@@ -325,8 +349,8 @@ test('failed health verification restores the previous release and restarts it',
   const installRoot = path.join(tempDir, 'installed');
   const oldRelease = path.join(installRoot, 'releases', '1.0.0');
   const plist = path.join(tempDir, 'LaunchAgents', 'com.example.llm-proxy.plist');
-  const fakeNpm = path.join(tempDir, 'fake-npm.zsh');
-  const fakeCurl = path.join(tempDir, 'fake-curl.zsh');
+  const fakeNpm = path.join(tempDir, 'fake-npm.bash');
+  const fakeCurl = path.join(tempDir, 'fake-curl.bash');
   const installer = path.resolve('installer/macos/install.sh');
 
   try {
@@ -341,15 +365,16 @@ test('failed health verification restores the previous release and restarts it',
     await mkdir(oldRelease, { recursive: true });
     await writeFile(path.join(oldRelease, 'package.json'), '{"version":"1.0.0"}');
     await symlink(oldRelease, path.join(installRoot, 'current'));
-    await writeFile(fakeNpm, '#!/bin/zsh\nmkdir -p node_modules\n');
-    await writeFile(fakeCurl, '#!/bin/zsh\nexit 1\n');
+    await writeFile(fakeNpm, '#!/bin/bash\nmkdir -p node_modules\n');
+    await writeFile(fakeCurl, '#!/bin/bash\nexit 1\n');
     await chmod(fakeNpm, 0o755);
     await chmod(fakeCurl, 0o755);
 
     await assert.rejects(
-      execFileAsync('/bin/zsh', [installer, '--yes'], {
+      execFileAsync('/bin/bash', [installer, '--yes'], {
         env: {
           ...process.env,
+          ...testPlatformEnv,
           LLM_PROXY_SOURCE_ROOT: sourceRoot,
           LLM_PROXY_INSTALL_ROOT: installRoot,
           LLM_PROXY_LAUNCH_AGENT: plist,
@@ -391,7 +416,7 @@ test('rollback switches current to a selected historical release and starts the 
     await mkdir(path.dirname(plist), { recursive: true });
     await writeFile(plist, '<?xml version="1.0"?><plist/>');
 
-    await execFileAsync('/bin/zsh', [rollback, '1.0.0', '--yes'], {
+    await execFileAsync('/bin/bash', [rollback, '1.0.0', '--yes'], {
       env: {
         ...process.env,
         LLM_PROXY_INSTALL_ROOT: installRoot,
@@ -413,7 +438,7 @@ test('noninteractive install fails with the persistent env file when a config va
   const sourceRoot = path.join(tempDir, 'release');
   const installRoot = path.join(tempDir, 'installed');
   const plist = path.join(tempDir, 'LaunchAgents', 'com.example.llm-proxy.plist');
-  const fakeNpm = path.join(tempDir, 'fake-npm.zsh');
+  const fakeNpm = path.join(tempDir, 'fake-npm.bash');
   const installer = path.resolve('installer/macos/install.sh');
 
   try {
@@ -428,13 +453,14 @@ test('noninteractive install fails with the persistent env file when a config va
     await writeFile(path.join(sourceRoot, 'dist', 'server', 'server', 'index.js'), '');
     await writeFile(path.join(sourceRoot, 'dist', 'server', 'server', 'provider.js'), '');
     await writeFile(path.join(sourceRoot, 'dist', 'ui', 'index.html'), '<!doctype html>');
-    await writeFile(fakeNpm, '#!/bin/zsh\nmkdir -p node_modules\n');
+    await writeFile(fakeNpm, '#!/bin/bash\nmkdir -p node_modules\n');
     await chmod(fakeNpm, 0o755);
 
     await assert.rejects(
-      execFileAsync('/bin/zsh', [installer], {
+      execFileAsync('/bin/bash', [installer], {
         env: {
           ...process.env,
+          ...testPlatformEnv,
           LLM_PROXY_SOURCE_ROOT: sourceRoot,
           LLM_PROXY_INSTALL_ROOT: installRoot,
           LLM_PROXY_LAUNCH_AGENT: plist,
@@ -460,7 +486,7 @@ test('service status explains when the LaunchAgent is not installed', async () =
 
   try {
     await assert.rejects(
-      execFileAsync('/bin/zsh', [service, 'status'], {
+      execFileAsync('/bin/bash', [service, 'status'], {
         env: {
           ...process.env,
           LLM_PROXY_LAUNCH_AGENT: plist,
@@ -496,7 +522,7 @@ test('uninstall removes service files while preserving config and runtime data',
     await writeFile(config, '[providers.test]\n');
     await writeFile(plist, '<?xml version="1.0"?><plist/>');
 
-    await execFileAsync('/bin/zsh', [uninstaller], {
+    await execFileAsync('/bin/bash', [uninstaller], {
       env: {
         ...process.env,
         LLM_PROXY_INSTALL_ROOT: appRoot,
@@ -529,7 +555,7 @@ test('uninstall requires a choice when multiple releases exist', async () => {
     await writeFile(plist, '<?xml version="1.0"?><plist/>');
 
     await assert.rejects(
-      execFileAsync('/bin/zsh', [uninstaller], {
+      execFileAsync('/bin/bash', [uninstaller], {
         env: {
           ...process.env,
           LLM_PROXY_INSTALL_ROOT: appRoot,
@@ -569,7 +595,7 @@ test('uninstall rollback removes only the active release and preserves the servi
     await writeFile(config, '[providers.test]\n');
     await writeFile(plist, '<?xml version="1.0"?><plist/>');
 
-    await execFileAsync('/bin/zsh', [uninstaller, '--rollback'], {
+    await execFileAsync('/bin/bash', [uninstaller, '--rollback'], {
       env: {
         ...process.env,
         LLM_PROXY_INSTALL_ROOT: appRoot,

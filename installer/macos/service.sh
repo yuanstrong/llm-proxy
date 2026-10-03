@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/bin/bash
 
 set -euo pipefail
 
@@ -29,16 +29,16 @@ start_service() {
     [[ -n "$LAUNCHCTL_BIN" ]] || die "launchctl was not found"
     "$LAUNCHCTL_BIN" bootstrap "$LAUNCHD_DOMAIN" "$LAUNCH_AGENT_PATH"
   fi
-  print -- "LaunchAgent started: $LAUNCH_AGENT_LABEL"
+  printf 'LaunchAgent started: %s\n' "$LAUNCH_AGENT_LABEL"
 }
 
 stop_service() {
   require_plist
   if is_service_loaded; then
     "$LAUNCHCTL_BIN" bootout "$LAUNCHD_DOMAIN" "$LAUNCH_AGENT_PATH"
-    print -- "LaunchAgent stopped: $LAUNCH_AGENT_LABEL"
+    printf 'LaunchAgent stopped: %s\n' "$LAUNCH_AGENT_LABEL"
   else
-    print -- "LaunchAgent is not running: $LAUNCH_AGENT_LABEL"
+    printf 'LaunchAgent is not running: %s\n' "$LAUNCH_AGENT_LABEL"
   fi
 }
 
@@ -47,7 +47,7 @@ status_service() {
   if is_service_loaded; then
     "$LAUNCHCTL_BIN" print "$LAUNCHD_DOMAIN/$LAUNCH_AGENT_LABEL"
   else
-    print -u2 -- "LaunchAgent is installed but not running: $LAUNCH_AGENT_LABEL"
+    printf 'LaunchAgent is installed but not running: %s\n' "$LAUNCH_AGENT_LABEL" >&2
     return 1
   fi
 }
@@ -67,7 +67,7 @@ main() {
       fi
       [[ -n "$LAUNCHCTL_BIN" ]] || die "launchctl was not found"
       "$LAUNCHCTL_BIN" bootstrap "$LAUNCHD_DOMAIN" "$LAUNCH_AGENT_PATH"
-      print -- "LaunchAgent restarted: $LAUNCH_AGENT_LABEL"
+      printf 'LaunchAgent restarted: %s\n' "$LAUNCH_AGENT_LABEL"
       ;;
     status)
       status_service

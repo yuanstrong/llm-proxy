@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/bin/bash
 
 set -euo pipefail
 
@@ -40,7 +40,7 @@ EOF
         exit 0
         ;;
       *)
-        print -u2 -- "Usage: install.sh [--yes]"
+        printf 'Usage: install.sh [--yes]\n' >&2
         exit 2
         ;;
     esac
@@ -48,7 +48,7 @@ EOF
 }
 
 preflight() {
-  [[ "$(uname -s)" == "Darwin" ]] || die "this installer only supports macOS"
+  require_macos
 
   local node_bin
   node_bin="$(find_node)"
@@ -60,9 +60,9 @@ preflight() {
   require_file "$SOURCE_ROOT/dist/ui/index.html"
   require_file "$SOURCE_ROOT/package-lock.json"
 
-  print -- "Preflight check passed"
-  print -- "  Node: $node_bin"
-  print -- "  Source: $SOURCE_ROOT"
+  printf 'Preflight check passed\n'
+  printf '  Node: %s\n' "$node_bin"
+  printf '  Source: %s\n' "$SOURCE_ROOT"
 }
 
 confirm_upgrade() {
@@ -74,7 +74,7 @@ confirm_upgrade() {
   (( count > 0 )) || return 0
 
   if [[ "$ASSUME_YES" == true ]]; then
-    print -- "Existing releases detected; upgrade confirmed by --yes"
+    printf 'Existing releases detected; upgrade confirmed by --yes\n'
     return 0
   fi
 
@@ -82,8 +82,9 @@ confirm_upgrade() {
     die "upgrade from ${current_version:-an existing installation} to $target_version requires confirmation; existing releases: $versions; rerun with --yes"
   fi
 
-  print -- "Existing releases: $versions"
-  print -n -- "Upgrade ${current_version:-the existing installation} to $target_version and restart the service? [y/N] "
+  printf 'Existing releases: %s\n' "$versions"
+  printf 'Upgrade %s to %s and restart the service? [y/N] ' \
+    "${current_version:-the existing installation}" "$target_version"
   local answer
   if ! read -r answer; then
     die "upgrade cancelled: no confirmation was received"
@@ -135,7 +136,7 @@ append_env_value() {
   local value="$2"
   [[ "$value" != *$'\n'* && "$value" != *$'\r'* && "$value" != *'"'* ]] \
     || die "value for $name contains unsupported quote or newline characters"
-  print -r -- "$name=\"$value\"" >> "$ENV_PATH"
+  printf '%s\n' "$name=\"$value\"" >> "$ENV_PATH"
 }
 
 ensure_config_environment() {
@@ -144,7 +145,8 @@ ensure_config_environment() {
 
   local references reference name value
   references="$(grep -Eo '\$\{[A-Za-z_][A-Za-z0-9_]*\}' "$CONFIG_PATH" | sort -u || true)"
-  for reference in ${(f)references}; do
+  while IFS= read -r reference; do
+    [[ -n "$reference" ]] || continue
     name="${reference#\${}"
     name="${name%\}}"
     env_file_has_name "$name" && continue
@@ -159,12 +161,12 @@ ensure_config_environment() {
       die "required environment variable $name is missing; set it or add it to $ENV_PATH"
     fi
 
-    print -n -- "Enter value for $name: "
+    printf 'Enter value for %s: ' "$name"
     read -r -s value
-    print
+    printf '\n'
     [[ -n "$value" ]] || die "a value is required for $name"
     append_env_value "$name" "$value"
-  done
+  done <<< "$references"
 }
 
 restore_previous_release() {
@@ -252,10 +254,10 @@ main() {
   [[ -z "$backup_dir" ]] || rm -rf -- "$backup_dir"
   prune_releases
 
-  print -- "LLM Proxy installed and started"
-  print -- "  Version: $version"
-  print -- "  Management UI: http://127.0.0.1:3000/"
-  print -- "  Install root: $INSTALL_ROOT"
+  printf 'LLM Proxy installed and started\n'
+  printf '  Version: %s\n' "$version"
+  printf '  Management UI: http://127.0.0.1:3000/\n'
+  printf '  Install root: %s\n' "$INSTALL_ROOT"
 }
 
 main "$@"

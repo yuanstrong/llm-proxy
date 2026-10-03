@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/bin/bash
 
 set -euo pipefail
 
@@ -48,7 +48,7 @@ confirm_rollback() {
     die "rollback from $current_version to $target_version requires confirmation; rerun with --yes"
   fi
 
-  print -n -- "Rollback from $current_version to $target_version and restart the service? [y/N] "
+  printf 'Rollback from %s to %s and restart the service? [y/N] ' "$current_version" "$target_version"
   local answer
   if ! read -r answer; then
     die "rollback cancelled: no confirmation was received"
@@ -89,8 +89,8 @@ main() {
     die "rollback failed health verification; the current release was restored"
   fi
 
-  print -- "LLM Proxy rolled back and started"
-  print -- "  Version: $target_version"
+  printf 'LLM Proxy rolled back and started\n'
+  printf '  Version: %s\n' "$target_version"
 }
 
 main "$@"

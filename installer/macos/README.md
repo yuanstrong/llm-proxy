@@ -2,6 +2,9 @@
 
 This is the first-phase, terminal-driven installer for macOS. It installs the compiled application and production dependencies into the current user's application support directory, then registers the manager as a per-user `LaunchAgent`.
 
+The installer scripts run with the system-provided `/bin/bash`; the target
+machine does not need zsh.
+
 ## Build and install
 
 Build the application before running the installer:
@@ -165,7 +168,10 @@ LLM_PROXY_HEALTHCHECK_URL
 LLM_PROXY_HEALTHCHECK_ATTEMPTS
 LLM_PROXY_HEALTHCHECK_DELAY
 LLM_PROXY_SKIP_HEALTHCHECK
+LLM_PROXY_ALLOW_NON_MACOS_TEST
 ```
 
 The health-check overrides are intended for automated tests and controlled
-diagnostics. Do not disable health checks for normal upgrades.
+diagnostics. `LLM_PROXY_ALLOW_NON_MACOS_TEST=1` is only for running installer
+tests on non-macOS CI hosts; it must not be set for a real deployment. Do not
+disable health checks for normal upgrades.

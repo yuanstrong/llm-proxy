@@ -151,6 +151,9 @@ pnpm dev
 
 The first-phase macOS installer runs as the logged-in user. It installs production dependencies into a versioned application directory, creates a user-level `LaunchAgent`, and keeps configuration/runtime data outside the versioned release.
 
+The installer scripts use the system-provided `/bin/bash`; zsh is not
+required on the target Mac.
+
 Build and install from the project root:
 
 ```bash

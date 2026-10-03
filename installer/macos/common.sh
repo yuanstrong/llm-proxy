@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/bin/bash
 
 set -u
 
@@ -17,13 +17,18 @@ LAUNCHD_DOMAIN="${LLM_PROXY_LAUNCHD_DOMAIN:-gui/$(id -u)}"
 LAUNCHCTL_BIN="${LLM_PROXY_LAUNCHCTL_BIN:-$(command -v launchctl || true)}"
 
 die() {
-  print -u2 -- "Error: $*"
+  printf 'Error: %s\n' "$*" >&2
   exit 1
+}
+
+require_macos() {
+  [[ "$(uname -s)" == "Darwin" || "${LLM_PROXY_ALLOW_NON_MACOS_TEST:-}" == "1" ]] \
+    || die "this installer only supports macOS"
 }
 
 find_node() {
   if [[ -n "${LLM_PROXY_NODE_BIN:-}" ]]; then
-    print -- "$LLM_PROXY_NODE_BIN"
+    printf '%s\n' "$LLM_PROXY_NODE_BIN"
     return
   fi
   command -v node || true
@@ -31,7 +36,7 @@ find_node() {
 
 find_npm() {
   if [[ -n "${LLM_PROXY_NPM_BIN:-}" ]]; then
-    print -- "$LLM_PROXY_NPM_BIN"
+    printf '%s\n' "$LLM_PROXY_NPM_BIN"
     return
   fi
   command -v npm || true
@@ -39,7 +44,7 @@ find_npm() {
 
 find_curl() {
   if [[ -n "${LLM_PROXY_CURL_BIN:-}" ]]; then
-    print -- "$LLM_PROXY_CURL_BIN"
+    printf '%s\n' "$LLM_PROXY_CURL_BIN"
     return
   fi
   command -v curl || true
@@ -78,21 +83,27 @@ current_release_target() {
 current_release_version() {
   local target
   target="$(current_release_target)" || return 1
-  basename -- "$target"
+  basename "$target"
 }
 
 release_dirs_by_mtime() {
   [[ -d "$RELEASES_DIR" ]] || return 0
+
   local -a dirs
-  dirs=( "$RELEASES_DIR"/[0-9]*(/omN) )
-  print -rl -- "${dirs[@]}"
+  local dir
+  shopt -s nullglob
+  dirs=( "$RELEASES_DIR"/[0-9]* )
+  shopt -u nullglob
+  ((${#dirs[@]} > 0)) || return 0
+
+  ls -dt "${dirs[@]}" 2>/dev/null
 }
 
 release_versions() {
   local dir
   while IFS= read -r dir; do
     [[ -n "$dir" ]] || continue
-    basename -- "$dir"
+    basename "$dir"
   done < <(release_dirs_by_mtime)
 }
 
@@ -100,9 +111,9 @@ release_count() {
   local count=0 dir
   while IFS= read -r dir; do
     [[ -n "$dir" ]] || continue
-    (( count += 1 ))
+    ((count += 1))
   done < <(release_dirs_by_mtime)
-  print -- "$count"
+  printf '%s\n' "$count"
 }
 
 previous_release_version() {
@@ -110,7 +121,7 @@ previous_release_version() {
   local version
   while IFS= read -r version; do
     [[ -n "$version" && "$version" != "$current_version" ]] || continue
-    print -- "$version"
+    printf '%s\n' "$version"
     return 0
   done < <(release_versions)
   return 1
@@ -131,7 +142,7 @@ wait_for_health() {
   attempts="${LLM_PROXY_HEALTHCHECK_ATTEMPTS:-30}"
   delay="${LLM_PROXY_HEALTHCHECK_DELAY:-1}"
 
-  for (( attempt = 1; attempt <= attempts; attempt += 1 )); do
+  for ((attempt = 1; attempt <= attempts; attempt += 1)); do
     if "$curl_bin" --fail --silent --show-error --max-time 2 \
       "${LLM_PROXY_HEALTHCHECK_URL:-http://127.0.0.1:3000/}" >/dev/null 2>&1; then
       return 0
@@ -145,14 +156,18 @@ wait_for_health() {
 prune_releases() {
   local current_target="$(current_release_target 2>/dev/null || true)"
   local -a dirs keep
-  dirs=( ${(f)"$(release_dirs_by_mtime)"} )
+  local dir kept should_keep kept_dir
+  dirs=()
+  while IFS= read -r dir; do
+    [[ -n "$dir" ]] || continue
+    dirs+=("$dir")
+  done < <(release_dirs_by_mtime)
   keep=()
 
   if [[ -n "$current_target" && -d "$current_target" ]]; then
     keep+=("$current_target")
   fi
 
-  local dir kept should_keep
   for dir in "${dirs[@]}"; do
     kept=false
     for kept_dir in "${keep[@]}"; do
@@ -161,8 +176,10 @@ prune_releases() {
         break
       fi
     done
-    $kept && continue
-    if (( ${#keep[@]} < 5 )); then
+    if [[ "$kept" == true ]]; then
+      continue
+    fi
+    if ((${#keep[@]} < 5)); then
       keep+=("$dir")
     fi
   done
