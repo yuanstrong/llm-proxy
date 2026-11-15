@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import type { AppConfig, LogLevel, ManagementStatus, ProviderManagerApi, ProviderOverview } from '../types';
 import { getHistoryDirectory, getLogDirectory } from './runtime';
 import { readLogEntries, readPromptHistory } from './observability';
+import { listPromptHistoryDates, localDateString } from './history-storage';
 import { serveUi } from './ui';
 
 function defaultUiRoot(): string {
@@ -82,10 +83,28 @@ export function createManagementServer(
       return;
     }
 
+    if (req.method === 'GET' && pathname === '/admin/api/prompt-history/dates') {
+      const requestUrl = new URL(req.url ?? '/', 'http://127.0.0.1');
+      const now = new Date();
+      const dates = listPromptHistoryDates(
+        getHistoryDirectory(runtimeEnv),
+        requestUrl.searchParams.get('provider') || undefined,
+        now,
+      );
+      sendJson(res, 200, { dates, today: localDateString(now) });
+      return;
+    }
+
     if (req.method === 'GET' && pathname === '/admin/api/prompt-history') {
       const requestUrl = new URL(req.url ?? '/', 'http://127.0.0.1');
+      const date = requestUrl.searchParams.get('date') || undefined;
+      if (date && !isHistoryDate(date)) {
+        sendJson(res, 400, { error: 'date must use YYYY-MM-DD format' });
+        return;
+      }
       sendJson(res, 200, readPromptHistory(getHistoryDirectory(runtimeEnv), {
         provider: requestUrl.searchParams.get('provider') || undefined,
+        date,
         limit: readLimit(requestUrl),
       }));
       return;
@@ -131,6 +150,13 @@ export function createManagementServer(
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('Not Found');
   });
+}
+
+function isHistoryDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const parsed = new Date(year, month - 1, day);
+  return parsed.getFullYear() === year && parsed.getMonth() === month - 1 && parsed.getDate() === day;
 }
 
 function readLimit(requestUrl: URL): number {

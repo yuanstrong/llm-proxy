@@ -1,4 +1,11 @@
-import type { LogEntry, LogLevel, ManagementStatus, PromptHistoryEntry, ProviderStatus } from '../../types';
+import type {
+  LogEntry,
+  LogLevel,
+  ManagementStatus,
+  PromptHistoryDates,
+  PromptHistoryEntry,
+  ProviderStatus,
+} from '../../types';
 
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetch(input, { headers: { Accept: 'application/json', ...init?.headers }, ...init });
@@ -20,9 +27,17 @@ export function getLogs(filters: { provider?: string; level?: LogLevel }): Promi
   return requestJson<LogEntry[]>(`/admin/api/logs?${query.toString()}`);
 }
 
-export function getPromptHistory(provider?: string): Promise<PromptHistoryEntry[]> {
+export function getPromptHistory(provider?: string, date?: string): Promise<PromptHistoryEntry[]> {
+  const query = new URLSearchParams();
+  if (provider) query.set('provider', provider);
+  if (date) query.set('date', date);
+  const search = query.toString();
+  return requestJson<PromptHistoryEntry[]>(`/admin/api/prompt-history${search ? `?${search}` : ''}`);
+}
+
+export function getPromptHistoryDates(provider?: string): Promise<PromptHistoryDates> {
   const query = provider ? `?provider=${encodeURIComponent(provider)}` : '';
-  return requestJson<PromptHistoryEntry[]>(`/admin/api/prompt-history${query}`);
+  return requestJson<PromptHistoryDates>(`/admin/api/prompt-history/dates${query}`);
 }
 
 export function changeProviderState(name: string, running: boolean): Promise<ProviderStatus> {

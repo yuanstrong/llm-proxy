@@ -1,6 +1,8 @@
 import { loadConfig } from './config';
 import { loadDotEnv } from './env';
+import { startHistoryRotation } from './history-storage';
 import { createLogger } from './logger';
+import { getHistoryDirectory } from './runtime';
 import { createProxyServer } from './server';
 
 const providerName = process.argv[2] ?? process.env.LLM_PROXY_PROVIDER;
@@ -19,12 +21,14 @@ if (!provider) {
 
 const logger = createLogger(provider.log_level ?? 'info');
 const server = createProxyServer(provider, logger);
+const stopHistoryRotation = startHistoryRotation(getHistoryDirectory(), provider.name);
 server.listen(provider.listen.port, provider.listen.host, () => {
   logger.info(`Provider '${provider.name}' listening on http://${provider.listen.host}:${provider.listen.port}`);
 });
 
 function shutdown(): void {
   logger.info(`Provider '${provider.name}' shutting down`);
+  stopHistoryRotation();
   server.close(() => process.exit(0));
 }
 

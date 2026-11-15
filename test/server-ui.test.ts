@@ -5,6 +5,7 @@ import test from 'node:test';
 import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import * as zlib from 'node:zlib';
 import { loadConfig } from '../src/server/config';
 import { loadDotEnv } from '../src/server/env';
 import { createManagementServer } from '../src/server/management-server';
@@ -165,6 +166,64 @@ test('admin prompt history is returned newest first and can be filtered by provi
     );
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), [newer, older]);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+    await rm(runtimeHome, { recursive: true, force: true });
+  }
+});
+
+test('admin prompt history filters by day and lists available dates', async () => {
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'llm-proxy-history-days-'));
+  const historyDirectory = path.join(runtimeHome, 'var', 'history');
+  await mkdir(historyDirectory, { recursive: true });
+  const archived = {
+    timestamp: '2026-10-01T12:00:00.000Z',
+    provider: 'deepseek',
+    format: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    prompt: 'Archived prompt',
+    response: 'Archived response',
+    status: 200,
+    durationMs: 90,
+  };
+  const current = { ...archived, timestamp: new Date().toISOString(), prompt: 'Today prompt' };
+  await writeFile(
+    path.join(historyDirectory, 'deepseek_2026-10-01.jsonl.gz'),
+    zlib.gzipSync(`${JSON.stringify(archived)}\n`),
+  );
+  await writeFile(
+    path.join(historyDirectory, 'deepseek.jsonl'),
+    `${JSON.stringify(current)}\n`,
+  );
+  const server = createManagementServer(config, fakeManager(), undefined, { LLM_PROXY_HOME: runtimeHome });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address() as AddressInfo;
+  const base = `http://127.0.0.1:${address.port}`;
+
+  try {
+    const archivedResponse = await fetch(
+      `${base}/admin/api/prompt-history?provider=deepseek&date=2026-10-01`,
+    );
+    assert.equal(archivedResponse.status, 200);
+    assert.deepEqual(await archivedResponse.json(), [archived]);
+
+    const datesResponse = await fetch(`${base}/admin/api/prompt-history/dates?provider=deepseek`);
+    assert.equal(datesResponse.status, 200);
+    const dates = await datesResponse.json() as { dates: string[]; today: string };
+    assert.ok(dates.dates.includes('2026-10-01'));
+    assert.ok(dates.dates.includes(dates.today));
+
+    const todayResponse = await fetch(
+      `${base}/admin/api/prompt-history?provider=deepseek&date=${dates.today}`,
+    );
+    assert.equal(todayResponse.status, 200);
+    assert.deepEqual(await todayResponse.json(), [current]);
+
+    const invalidResponse = await fetch(`${base}/admin/api/prompt-history?date=2026-13-01`);
+    assert.equal(invalidResponse.status, 400);
   } finally {
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),

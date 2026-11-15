@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { LogEntry, LogLevel, PromptHistoryEntry } from '../types';
+import { entryDateString, isPromptHistoryEntry, readHistoryLines } from './history-storage';
 
 const LOG_LEVELS: LogLevel[] = ['debug', 'info', 'warn', 'error'];
 const FORMATTED_LOG_LINE = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}) \[PID:\d+\] \[TID:\d+\] \[([^\]]+)\] (.*)$/i;
@@ -61,36 +62,30 @@ export function readLogEntries(
   return entries.slice(-filters.limit).reverse();
 }
 
-function isHistoryEntry(value: unknown): value is PromptHistoryEntry {
-  if (!value || typeof value !== 'object') return false;
-  const candidate = value as Partial<PromptHistoryEntry>;
-  return typeof candidate.timestamp === 'string'
-    && typeof candidate.provider === 'string'
-    && typeof candidate.format === 'string'
-    && typeof candidate.prompt === 'string'
-    && typeof candidate.response === 'string'
-    && typeof candidate.status === 'number'
-    && typeof candidate.durationMs === 'number';
+function historyFiles(directory: string, date?: string): string[] {
+  const currentFiles = listFiles(directory, '.jsonl');
+  if (!date) return [...currentFiles, ...listFiles(directory, '.jsonl.gz')];
+  return [...currentFiles, ...listFiles(directory, `_${date}.jsonl.gz`)];
 }
 
 export function readPromptHistory(
   directory: string,
-  filters: { provider?: string; limit: number },
+  filters: { provider?: string; date?: string; limit: number },
 ): PromptHistoryEntry[] {
   const entries: PromptHistoryEntry[] = [];
-  for (const filePath of listFiles(directory, '.jsonl')) {
-    let content: string;
+  for (const filePath of historyFiles(directory, filters.date)) {
+    let lines: string[];
     try {
-      content = fs.readFileSync(filePath, 'utf8');
+      lines = readHistoryLines(filePath);
     } catch {
       continue;
     }
-    for (const line of content.split(/\r?\n/)) {
-      if (!line.trim()) continue;
+    for (const line of lines) {
       try {
         const parsed: unknown = JSON.parse(line);
-        if (!isHistoryEntry(parsed)) continue;
+        if (!isPromptHistoryEntry(parsed)) continue;
         if (filters.provider && parsed.provider !== filters.provider) continue;
+        if (filters.date && entryDateString(parsed.timestamp) !== filters.date) continue;
         entries.push(parsed);
       } catch {
         // A partial final line should not make the history endpoint unavailable.
