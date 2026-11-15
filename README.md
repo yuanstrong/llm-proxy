@@ -42,6 +42,10 @@ pnpm install
 The proxy loads `config.toml` from the project root. The default configuration looks like this:
 
 ```toml
+[management]
+host = "127.0.0.1"
+port = 3000
+
 [providers.deepseek]
 listen = "127.0.0.1:9876"
 api_key = "sk-xxx"
@@ -67,7 +71,7 @@ openai-completions = "http://localhost:11434/v1/chat/completions"
 
 Configuration fields:
 
-- Management server: fixed at `127.0.0.1:3000`.
+- `[management]`: Management console and admin API bind address. Defaults to `127.0.0.1:3000`; change `port` (for example `4310`) to serve the web console on another port, then open `http://127.0.0.1:4310/`. The macOS installer health check still probes port `3000` unless `LLM_PROXY_HEALTHCHECK_URL` is set for the install.
 - `[providers.<name>]`: A provider definition. `api_key` is optional.
 - `providers.<name>.listen`: The child proxy bind address in `host:port` format.
 - `providers.<name>.log_level`: Child-process logging threshold: `debug`, `info`, `warn`, or `error`. Defaults to `info`.
@@ -250,13 +254,13 @@ Debug request logs include the provider name, HTTP method, URL, response status,
 
 Each provider child must support the format that its client sends.
 
-The management API used by the console is available at `GET /admin/api/status`, `GET /admin/api/logs`, and `GET /admin/api/prompt-history`. Log requests accept `provider`, `level`, and `limit` query parameters; history requests accept `provider` and `limit`. Prompt history stores extracted text from common Anthropic/OpenAI JSON and SSE responses, with a bounded response capture. API keys are not included in management API responses.
+The management API used by the console is available at `GET /admin/api/status`, `GET /admin/api/logs`, `GET /admin/api/prompt-history`, and `GET /admin/api/prompt-history/dates`. Log requests accept `provider`, `level`, and `limit` query parameters; history requests accept `provider`, `date` (`YYYY-MM-DD`, defaults to today in the console), and `limit`. Prompt history stores extracted text from common Anthropic/OpenAI JSON and SSE responses, with a bounded response capture, and records older than the current local day are archived as `<provider>_<date>.jsonl.gz` after the 03:00 cutoff. API keys are not included in management API responses.
 
 ## Error handling and scope
 
 - Upstream connection errors return `502 Bad Gateway` when no response has been sent yet.
 - Upstream status codes, headers, and response bodies are passed through.
-- The management listener binds to `127.0.0.1:3000`.
+- The management listener binds to the configured `[management]` address, defaulting to `127.0.0.1:3000`.
 - Provider processes bind to their individual `providers.<name>.listen` addresses.
 - Provider lifecycle is managed through `POST /admin/api/providers/<name>/start` and `/stop`.
 - The project does not currently provide retries, rate limiting, request logging, hot configuration reload, local TLS, or Ollama-native API routing.

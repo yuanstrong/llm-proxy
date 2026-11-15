@@ -299,6 +299,32 @@ test('config loads all providers and their listen addresses from TOML', async ()
   }
 });
 
+test('management host and port can be configured in TOML', async () => {
+  const configRoot = await mkdtemp(path.join(os.tmpdir(), 'llm-proxy-config-'));
+  const configPath = path.join(configRoot, 'config.toml');
+  await writeFile(
+    configPath,
+    [
+      '[management]',
+      'host = "127.0.0.1"',
+      'port = 4310',
+      '',
+      '[providers.deepseek]',
+      'listen = "127.0.0.1:9000"',
+      '',
+      '[providers.deepseek.endpoints]',
+      'openai-completions = "http://127.0.0.1:11434/v1/chat/completions"',
+    ].join('\n'),
+  );
+
+  try {
+    const loaded = loadConfig(configPath);
+    assert.deepEqual(loaded.management, { host: '127.0.0.1', port: 4310 });
+  } finally {
+    await rm(configRoot, { recursive: true, force: true });
+  }
+});
+
 test('loads dotenv values without overriding existing environment variables', async () => {
   const envRoot = await mkdtemp(path.join(os.tmpdir(), 'llm-proxy-env-'));
   const envPath = path.join(envRoot, '.env');
