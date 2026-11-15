@@ -1,3 +1,7 @@
+[management]
+host = "127.0.0.1"
+port = 4310
+
 [providers.deepseek]
 listen = "127.0.0.1:8964"
 api_key = "${DEEPSEEK_API_KEY}"

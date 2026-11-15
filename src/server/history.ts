@@ -1,5 +1,5 @@
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { historyFilePath, rotateHistoryIfDue } from './history-storage';
 import type { ApiFormat, PromptHistoryEntry } from '../types';
 
 export interface RequestDetails {
@@ -117,9 +117,14 @@ export function extractResponseText(body: string): string {
   return sseText || body;
 }
 
-export function appendPromptHistory(directory: string, entry: PromptHistoryEntry): void {
+export function appendPromptHistory(directory: string, entry: PromptHistoryEntry, now = new Date()): void {
   fs.mkdirSync(directory, { recursive: true });
-  fs.appendFileSync(path.join(directory, `${entry.provider}.jsonl`), `${JSON.stringify(entry)}\n`, 'utf8');
+  rotateHistoryIfDue(directory, entry.provider, now);
+  fs.appendFileSync(
+    historyFilePath(directory, entry.provider),
+    `${JSON.stringify(entry)}\n`,
+    'utf8',
+  );
 }
 
 export function createHistoryEntry(

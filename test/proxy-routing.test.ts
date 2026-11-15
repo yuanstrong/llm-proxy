@@ -6,9 +6,22 @@ import test from 'node:test';
 import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import * as zlib from 'node:zlib';
 import { createLogger } from '../src/server/logger';
 import { createProxyServer } from '../src/server/server';
 import type { ProviderConfig } from '../src/types';
+
+async function readHistoryWhenReady(file: string): Promise<Record<string, unknown>> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    try {
+      return JSON.parse((await readFile(file, 'utf8')).trim()) as Record<string, unknown>;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+  throw new Error(`history file was not written: ${file}`);
+}
 
 test('routes /anthropic/v1/messages to the configured anthropic endpoint only', async () => {
   let upstreamPath = '';
@@ -278,6 +291,85 @@ test('captures OpenAI prompt and response in prompt history without changing the
     assert.equal(history.model, 'gpt-test');
     assert.equal(history.prompt, 'Hello provider');
     assert.equal(history.response, 'Hello user');
+    assert.equal(history.status, 200);
+  } finally {
+    await Promise.all([
+      new Promise<void>((resolve, reject) => proxy.close((error) => (error ? reject(error) : resolve()))),
+      new Promise<void>((resolve, reject) => upstream.close((error) => (error ? reject(error) : resolve()))),
+    ]);
+    await rm(runtimeHome, { recursive: true, force: true });
+  }
+});
+
+test('records decoded text when the upstream response is compressed', async () => {
+  const runtimeHome = await mkdtemp(path.join(os.tmpdir(), 'llm-proxy-compressed-history-'));
+  const streamBody = [
+    'event: content_block_delta',
+    'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello compressed"}}',
+    '',
+    'data: [DONE]',
+    '',
+  ].join('\n');
+  const compressed = zlib.gzipSync(streamBody);
+
+  const upstream = http.createServer((req, res) => {
+    req.on('data', () => {});
+    req.on('end', () => {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Content-Encoding': 'gzip',
+      });
+      res.end(compressed);
+    });
+  });
+  upstream.listen(0, '127.0.0.1');
+  await once(upstream, 'listening');
+  const upstreamAddress = upstream.address() as AddressInfo;
+
+  const provider: ProviderConfig = {
+    name: 'compressed-history-provider',
+    listen: { host: '127.0.0.1', port: 0 },
+    endpoints: { 'openai-completions': `http://127.0.0.1:${upstreamAddress.port}/v1/chat/completions` },
+    models: {},
+  };
+  const historyDirectory = path.join(runtimeHome, 'history');
+  const proxy = createProxyServer(provider, undefined, historyDirectory);
+  proxy.listen(0, '127.0.0.1');
+  await once(proxy, 'listening');
+  const proxyAddress = proxy.address() as AddressInfo;
+
+  try {
+    const received = await new Promise<Buffer>((resolve, reject) => {
+      const request = http.request({
+        hostname: '127.0.0.1',
+        port: proxyAddress.port,
+        path: '/openai/v1/chat/completions',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept-Encoding': 'gzip',
+        },
+      }, (response) => {
+        assert.equal(response.headers['content-encoding'], 'gzip');
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => resolve(Buffer.concat(chunks)));
+      });
+      request.on('error', reject);
+      request.end(JSON.stringify({
+        model: 'gpt-test',
+        messages: [{ role: 'user', content: 'Hello compressed provider' }],
+      }));
+    });
+
+    // The client still receives the upstream's compressed bytes untouched.
+    assert.equal(zlib.gunzipSync(received).toString('utf8'), streamBody);
+
+    const history = await readHistoryWhenReady(
+      path.join(historyDirectory, 'compressed-history-provider.jsonl'),
+    );
+    assert.equal(history.prompt, 'Hello compressed provider');
+    assert.equal(history.response, 'Hello compressed');
     assert.equal(history.status, 200);
   } finally {
     await Promise.all([

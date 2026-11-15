@@ -55,6 +55,11 @@ export interface PromptHistoryEntry {
   durationMs: number;
 }
 
+export interface PromptHistoryDates {
+  dates: string[];
+  today: string;
+}
+
 export interface ProviderManagerApi {
   status(): Promise<ProviderStatus[]>;
   start(name: string): Promise<ProviderStatus>;

@@ -42,6 +42,23 @@ function parseListenAddress(value: unknown, fieldName: string): { host: string; 
   return { host, port };
 }
 
+function parseManagement(raw: unknown): { host: string; port: number } {
+  const management = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  const host = management.host ?? '127.0.0.1';
+  if (typeof host !== 'string' || host.trim().length === 0) {
+    console.error('config.toml: "management.host" must be a non-empty string');
+    process.exit(1);
+  }
+
+  const port = management.port ?? 3000;
+  if (typeof port !== 'number' || !Number.isInteger(port) || port < 1 || port > 65535) {
+    console.error('config.toml: "management.port" must be an integer between 1 and 65535');
+    process.exit(1);
+  }
+
+  return { host, port };
+}
+
 export function loadConfig(configPath?: string): AppConfig {
   const defaultConfigPaths = [
     path.resolve(__dirname, '..', '..', 'config.toml'),
@@ -109,7 +126,7 @@ export function loadConfig(configPath?: string): AppConfig {
   }
 
   return {
-    management: { host: '127.0.0.1', port: 3000 },
+    management: parseManagement(raw.management),
     providers: parsedProviders,
     configPath: filePath,
   };
