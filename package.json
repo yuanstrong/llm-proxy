@@ -1,6 +1,6 @@
 {
   "name": "llm-proxy",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Multi-provider LLM proxy with TOML config",
   "main": "dist/server/server/index.js",
   "scripts": {
