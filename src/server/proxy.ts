@@ -1,9 +1,16 @@
 import { IncomingMessage, ServerResponse } from 'http';
 import * as http from 'http';
 import * as https from 'https';
+import * as zlib from 'node:zlib';
 import type { ApiFormat } from '../types';
 import { appendPromptHistory, createHistoryEntry, extractRequestDetails } from './history';
 import type { Logger } from './logger';
+
+const MAX_HISTORY_RESPONSE_BYTES = 512_000;
+
+interface HistoryResponseCapture {
+  finish: () => Promise<string>;
+}
 
 function resolveTargetUrl(targetUrl: string, format: ApiFormat): URL {
   const url = new URL(targetUrl);
@@ -13,6 +20,74 @@ function resolveTargetUrl(targetUrl: string, format: ApiFormat): URL {
   }
 
   return url;
+}
+
+function normalizeContentEncoding(value: string | string[] | undefined): string {
+  return (Array.isArray(value) ? value.join(',') : value ?? '').trim().toLowerCase();
+}
+
+// Returns undefined for identity bodies, null for encodings we cannot decode.
+function createContentDecoder(encoding: string): NodeJS.ReadWriteStream | undefined | null {
+  switch (encoding) {
+    case '':
+    case 'identity':
+      return undefined;
+    case 'gzip':
+    case 'x-gzip':
+      return zlib.createGunzip();
+    case 'deflate':
+      return zlib.createUnzip();
+    case 'br':
+      return zlib.createBrotliDecompress();
+    case 'zstd':
+      return zlib.createZstdDecompress();
+    default:
+      return null;
+  }
+}
+
+function createHistoryResponseCapture(
+  proxyRes: IncomingMessage,
+  logger?: Logger,
+): HistoryResponseCapture | undefined {
+  const encoding = normalizeContentEncoding(proxyRes.headers['content-encoding']);
+  const decoder = createContentDecoder(encoding);
+  if (decoder === null) {
+    logger?.warn(`Unsupported content-encoding '${encoding}'; skipping prompt history capture`);
+    return undefined;
+  }
+
+  const chunks: Buffer[] = [];
+  let captured = 0;
+  const collect = (chunk: Buffer | string): void => {
+    if (captured >= MAX_HISTORY_RESPONSE_BYTES) return;
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    const remaining = MAX_HISTORY_RESPONSE_BYTES - captured;
+    chunks.push(buffer.subarray(0, remaining));
+    captured += Math.min(buffer.length, remaining);
+  };
+
+  if (!decoder) {
+    proxyRes.on('data', collect);
+    return { finish: async () => Buffer.concat(chunks).toString('utf8') };
+  }
+
+  const decoded = new Promise<void>((resolve) => {
+    decoder.once('end', resolve);
+    decoder.once('close', resolve);
+    // A truncated or malformed stream must not crash the proxy; keep whatever
+    // text was decoded so far instead of failing the request.
+    decoder.on('error', () => resolve());
+  });
+  decoder.on('data', collect);
+  proxyRes.pipe(decoder);
+
+  return {
+    finish: async () => {
+      await decoded;
+      return Buffer.concat(chunks).toString('utf8');
+    },
+  };
 }
 
 export function proxyRequest(
@@ -81,29 +156,26 @@ export function proxyRequest(
     const transport = isHttps ? https : http;
 
     const proxyReq = transport.request(options, (proxyRes) => {
-      const responseChunks: Buffer[] = [];
-      let responseSize = 0;
-      proxyRes.on('data', (chunk: Buffer) => {
-        if (responseSize >= 512_000) return;
-        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-        const remaining = 512_000 - responseSize;
-        responseChunks.push(buffer.subarray(0, remaining));
-        responseSize += Math.min(buffer.length, remaining);
-      });
+      const capture = history && requestDetails
+        ? createHistoryResponseCapture(proxyRes, logger)
+        : undefined;
+
       proxyRes.once('end', () => {
-        if (!history || !requestDetails) return;
-        try {
-          appendPromptHistory(history.directory, createHistoryEntry(
-            history.provider,
-            format,
-            requestDetails,
-            Buffer.concat(responseChunks).toString('utf8'),
-            proxyRes.statusCode ?? 502,
-            Number(process.hrtime.bigint() - startedAt) / 1_000_000,
-          ));
-        } catch (error) {
-          logger?.warn(`Unable to write prompt history: ${error instanceof Error ? error.message : 'unknown error'}`);
-        }
+        if (!capture || !history || !requestDetails) return;
+        void capture.finish().then((responseBody) => {
+          try {
+            appendPromptHistory(history.directory, createHistoryEntry(
+              history.provider,
+              format,
+              requestDetails,
+              responseBody,
+              proxyRes.statusCode ?? 502,
+              Number(process.hrtime.bigint() - startedAt) / 1_000_000,
+            ));
+          } catch (error) {
+            logger?.warn(`Unable to write prompt history: ${error instanceof Error ? error.message : 'unknown error'}`);
+          }
+        });
       });
       res.writeHead(proxyRes.statusCode ?? 502, proxyRes.headers);
       proxyRes.pipe(res, { end: true });
